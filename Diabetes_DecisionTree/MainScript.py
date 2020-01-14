@@ -5,7 +5,8 @@ Split dataset into training set and test set
 Key attributes of Tree are leaf_matrix, marked_data, tree_array, predict()
 """
 import random, matplotlib.pyplot as plt, numpy as np
-import startup, prep, bst
+import startup
+import prep, bst
 import prep.ingest as ingest
 
 random.seed(10)
