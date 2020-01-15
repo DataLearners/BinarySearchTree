@@ -26,9 +26,9 @@ class SplitClass:
         self.true_rows, self.false_rows = partition(data, question)
         self.min_rows = min(len(self.true_rows), len(self.false_rows))
         
-        redux = loss.Gain.memo(self.true_rows, self.false_rows, self.resp)
+        redux = loss.info_gain(self.true_rows, self.false_rows, self.resp)
         score_ = loss.Score.memo(data, self.resp)
-        self.info_gain = score_.weight * (score_.value - redux.value)
+        self.info_gain = score_.weight * (score_.value - redux)
         
         key = (col_idx, value, resp_col, len(data), score_.value)
         try:
@@ -48,40 +48,6 @@ class SplitClass:
                     return(instance)
                     
         return(SplitClass(data, col_idx, value, resp_col))
-
-@config.func_timer
-def build_tree(rows, resp_col, idx=1):
-    """Builds the tree.
-    Base case: no further info gain. Since we can ask no further questions,
-    we'll return a leaf.
-    Otherwise: Continue recursively down both branches. Return a Decision
-    node. The Decision node records the question and both branches.
-    """
-    memo_split = memoize(find_best_split)
-    gain, question, score = memo_split(rows, resp_col)
-    if question == None:
-        leaf = bst.Leaf.memo(rows, resp_col, idx, score)
-        leaf.tree = config.TREE_ID
-        return(leaf)
-    
-    true_rows, false_rows = partition(rows, question)
-    child_true, child_false = 2*idx , 2*idx + 1 #Left child, Right child
-    
-    left = build_tree(true_rows, resp_col, child_true)
-    right = build_tree(false_rows, resp_col, child_false)
-    
-    decision = bst.Decision.memo(question, rows, left, right, idx, score, gain)
-    decision.tree = config.TREE_ID
-    return(decision)
-
-def memoize(f):
-    memo = {}
-    def helper(*args):
-        key = tuple(map(prep.to_tuple, args))
-        if key not in memo:            
-            memo[key] = f(*args)
-        return memo[key]
-    return helper
 
 @config.func_timer    
 def find_best_split(rows, resp_col):
@@ -111,6 +77,31 @@ def find_best_split(rows, resp_col):
                 best_gain, best_question = split.info_gain, split.question
 
     return(best_gain, best_question, curr_score)
+
+@config.func_timer
+def build_tree(rows, resp_col, idx=1):
+    """Builds the tree.
+    Base case: no further info gain. Since we can ask no further questions,
+    we'll return a leaf.
+    Otherwise: Continue recursively down both branches. Return a Decision
+    node. The Decision node records the question and both branches.
+    """
+    gain, question, score = find_best_split(rows, resp_col)
+
+    if question == None:
+        leaf = bst.Leaf.memo(rows, resp_col, idx, score)
+        leaf.tree = config.TREE_ID
+        return(leaf)
+    
+    true_rows, false_rows = partition(rows, question)
+    child_true, child_false = 2*idx , 2*idx + 1 #Left child, Right child
+    
+    left = build_tree(true_rows, resp_col, child_true)
+    right = build_tree(false_rows, resp_col, child_false)
+    
+    decision = bst.Decision.memo(question, rows, left, right, idx, score, gain)
+    decision.tree = config.TREE_ID
+    return(decision)
 
 @config.func_timer
 def partition(rows, question):

@@ -141,5 +141,6 @@ def to_tuple(x):
     if isinstance(x, dict):
         result = flatten(x.items())
         return(tuple(result))
-    
+    if isinstance(x, int):
+        return(x)
     

@@ -13,7 +13,7 @@ Loss refers to the loss function used in the model. Classification Trees use
 a Gini Impurity loss function. Regression Trees use Variance.
 """
 import prep, neat
-import scipy.stats, statistics
+import scipy.stats
 
 import neat.config as neat_config
 neat_config.MAX_WIDTH = 70

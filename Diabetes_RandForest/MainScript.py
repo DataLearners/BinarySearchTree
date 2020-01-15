@@ -35,7 +35,7 @@ b = bmi_forest.predict(test_data, conf=0.85)
 
 trees = 3
 horiz, rsq, obe, mse = [], [], [], []
-for i in range(3):
+for i in range(5):
     horiz.append(trees)
     reg_forest = Forest(train_data, 5, df.header, loss='var',
                         n_features=2, n_trees=trees)
@@ -46,14 +46,17 @@ for i in range(3):
     mse.append(reg_forest.mse)
     trees += 3
   
-plt.figure(figsize=(18, 6))
-plt.subplot(1,2,1)    
+plt.figure(figsize=(15, 12))
+plt.subplot(2,2,1)    
 x = np.asarray(horiz)
 plt.plot(x, np.asarray(rsq))
 plt.ylabel('R-Square')
 plt.xlabel('Trees')
-plt.subplot(1,2,2) 
+plt.subplot(2,2,2) 
 plt.plot(x, np.asarray(mse), label='MeanSqError')
+plt.ylabel('MeanSqError')
+plt.xlabel('Trees')
+plt.subplot(2,2,3)
 plt.plot(x, np.asarray(obe), label='out of bag error')
 plt.ylabel('Error')
 plt.xlabel('Trees')
