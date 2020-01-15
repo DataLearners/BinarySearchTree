@@ -140,6 +140,6 @@ def to_tuple(x):
         return(result)
     if isinstance(x, dict):
         result = flatten(x.items())
-        return(tuple(result))    
+        return(tuple(result))
     
     

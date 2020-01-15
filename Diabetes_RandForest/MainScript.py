@@ -9,7 +9,10 @@ import prep.ingest as ingest
 from forest import Forest
 
 random.seed(10)
-datafolder = startup.find_subroot('Python\\Diabetes_DecisionTree\\Dataset')
+datapath = 'data_science_poc\\Diabetes_DecisionTree\\Dataset'
+datafolder = startup.find_subroot(datapath)
+startup.make_folder('Output')
+outputpath = startup.find_subroot('Diabetes_DecisionTree\\Output')
 files = ingest.Folder(datafolder)
 files()
  
@@ -26,16 +29,17 @@ print("Outcome Out of bag error {}".format(diab_forest.out_bag_error))
 a = diab_forest.predict(test_data)
 
 resp = df.header.index('BMI')
-bmi_forest = Forest(train_data, resp, df.header, loss='var', n_features=2)
+bmi_forest = Forest(train_data, resp, df.header, loss='var', n_features=3)
 print("BMI Out of bag error {}".format(bmi_forest.out_bag_error))
-b = bmi_forest.predict(test_data, conf=0.95)
+b = bmi_forest.predict(test_data, conf=0.85)
 
 trees = 3
 horiz, rsq, obe, mse = [], [], [], []
-for i in range(15):
+for i in range(3):
     horiz.append(trees)
     reg_forest = Forest(train_data, 5, df.header, loss='var',
-                        n_features=3, n_trees=trees)
+                        n_features=2, n_trees=trees)
+    print("{} trees Out bag error {}".format(trees, reg_forest.out_bag_error))
     pred = reg_forest.predict(test_data)
     rsq.append(reg_forest.r_sq)
     obe.append(reg_forest.out_bag_error)
@@ -54,7 +58,7 @@ plt.plot(x, np.asarray(obe), label='out of bag error')
 plt.ylabel('Error')
 plt.xlabel('Trees')
 plt.legend()
-plt.savefig('AccuracyPlots.png')
+plt.savefig('Output\\AccuracyPlots.png')
 plt.show()
 
 bst.config.TIMES.plot_times()

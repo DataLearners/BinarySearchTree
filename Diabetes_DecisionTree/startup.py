@@ -30,6 +30,14 @@ def find_file(name, path=MY_DIR):
     for root, dirs, files in os.walk(path):
         if name in files:
             return os.path.join(root, name)
+        
+def make_folder(path):
+    try:
+        os.mkdir(path)
+    except OSError:
+        print ("Creation of the directory %s failed" % path)
+    else:
+        print ("Successfully created the directory %s " % path)
 
-MY_LIBRARY = find_subroot('Python\\library')
+MY_LIBRARY = find_subroot('data_science_poc\\library')
 sys.path.append(MY_LIBRARY)

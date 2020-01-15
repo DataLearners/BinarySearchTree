@@ -54,8 +54,7 @@ def func_timer(func):
         value = func(*args, **kwargs)
         end_time = time.perf_counter()
         run_time = end_time - start_time
-        
-#        TIMES.func_times[func.__name__] = round(run_time, SIG_DIGITS)     
+#        TIMES.func_times[func.__name__] = round(run_time, SIG_DIGITS)   
         try:
             TIMES.func_times[func.__name__] += round(run_time, SIG_DIGITS)
         except KeyError:

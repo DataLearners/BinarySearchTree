@@ -5,12 +5,14 @@ Split dataset into training set and test set
 Key attributes of Tree are leaf_matrix, marked_data, tree_array, predict()
 """
 import random, matplotlib.pyplot as plt, numpy as np
-import startup
-import prep, bst
+import startup, prep, bst
 import prep.ingest as ingest
 
 random.seed(10)
-datafolder = startup.find_subroot('Python\\Diabetes_DecisionTree\\Dataset')
+datapath = 'data_science_poc\\Diabetes_DecisionTree\\Dataset'
+datafolder = startup.find_subroot(datapath)
+startup.make_folder('Output')
+outputpath = startup.find_subroot('Diabetes_DecisionTree\\Output')
 files = ingest.Folder(datafolder)
 files()
  
@@ -26,18 +28,20 @@ diab_tree = bst.Tree(train_data, y, df.header, loss='gini')
 diab_pred = diab_tree.predict(test_data)
 leaf = random.sample(diab_tree.leaves, 1)[0]
 diab_tree.traverse_to(leaf)
-diab_tree.leaf_matrix.export("Diabetes_LeafMatrix.csv")
-diab_tree.tree_array.export("Diabetes_Tree.csv")
-diab_tree.marked_data.export("Diabetes_MarkedTrainingData.csv")
+diab_tree.leaf_matrix.export("Diabetes_LeafMatrix.csv", folder=outputpath)
+diab_tree.tree_array.export("Diabetes_Tree.csv", folder=outputpath)
+filename= "Diabetes_MarkedTrainingData.csv"
+diab_tree.marked_data.export(filename, folder=outputpath)
 
 y = df.header.index('BMI')
 bmi_tree = bst.Tree(train_data, y, df.header, loss='var', min_rows=15)
-bmi_tree.predict(test_data, conf=0.8).export("BMI_Predictions.csv")
+filename = "BMI_Predictions.csv"
+bmi_tree.predict(test_data, conf=0.8).export(filename, folder=outputpath)
 leaf = random.sample(bmi_tree.leaves, 1)[0]
 bmi_tree.traverse_to(leaf)
-bmi_tree.leaf_matrix.export("BMI_LeafMatrix.csv")
-bmi_tree.tree_array.export("BMI_Tree.csv")
-bmi_tree.marked_data.export("BMI_MarkedTrainingData.csv")
+bmi_tree.leaf_matrix.export("BMI_LeafMatrix.csv", folder=outputpath)
+bmi_tree.tree_array.export("BMI_Tree.csv", folder=outputpath)
+bmi_tree.marked_data.export("BMI_MarkedTrainingData.csv", folder=outputpath)
 
 rows = 0
 horiz, mse, rsq, ftrs = [], [], [], []
@@ -71,7 +75,7 @@ plt.plot(x, np.asarray(ftrs))
 plt.axvline(x=50, ls=':')
 plt.ylabel('Features')
 plt.xlabel('Minimum Node Size')
-plt.savefig('AccuracyPlots.png')
+plt.savefig('Output\\AccuracyPlots.png')
 plt.show()
 
 bst.config.TIMES.plot_times()

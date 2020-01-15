@@ -5,10 +5,14 @@ Created on Thu Dec  5 16:04:49 2019
 @author: Douglas Brown
 """
 import bst, prep, neat
-import scipy.stats, statistics
+from bst import config
+import scipy.stats
 
+mode = lambda x: max(set(x), key=x.count)
+estimate = {'gini': mode, 'var': scipy.mean}
 frst_types = {'var':'RegressionForest', 'gini':'ClassificationForest'}
 tree_types = {'var':'RegressionTree', 'gini':'ClassificationTree'}
+
 class Forest:
     """Random Forest class. Constructs either Classification Trees or 
     Regression Trees based on the loss function. Classification Forests return
@@ -39,11 +43,11 @@ class Forest:
         attr = "{}".format([x for x in dir(self) if "__" not in x])
         return("Forest Class attributes\n {}".format(neat.wrap(attr)))
     
+    @config.func_timer 
     def predict(self, test_data, conf=0.95):
         """Generate a set of predictions on a data set."""
         leaf = lambda tree: bst.classify(row, self.trees[tree]['tree'].model)
-        predict = {'gini': statistics.mode, 'var': scipy.mean}
-        
+                
         y_hat = []
         y_ = []
         ranges = []
@@ -51,15 +55,12 @@ class Forest:
         for row in test_data:
             leaves = [leaf(tree) for tree in self.trees]
             y_hats_row = [node.prediction for node in leaves]
-            try:
-                y_hat.append(predict[self.loss](y_hats_row))
-                y_.append(row[self.y])
-                interval = bst.conf_interval(y_hats_row, conf, self.tree_type)
-                ranges.append(interval)
-                feature_row = [row[i] for i in range(len(row)) if i != self.y]
-                without_y.append(feature_row)
-            except:
-                continue
+            y_hat.append(estimate[self.loss](y_hats_row))
+            y_.append(row[self.y])
+            interval = bst.conf_interval(y_hats_row, conf, self.tree_type)
+            ranges.append(interval)
+            feature_row = [row[i] for i in range(len(row)) if i != self.y]
+            without_y.append(feature_row)
         
         p_ = self.n_features
         if self.tree_type == 'RegressionTree':
@@ -80,27 +81,24 @@ class Forest:
         pDF = prep.ingest.ListDF(pred, header)
         
         return(pDF)    
-        
+
+@config.func_timer        
 def calc_out_of_bag_error(forest):
     """With classification forests the function returns the error rate on 
     out of bag samples. With regression forests the function returns the 
     mean square error rate, RSquare value, and Adj RSquare value."""
     leaf = lambda tree: bst.classify(row, forest.trees[tree]['tree'].model)
-    predict = {'gini': statistics.mode, 'var': scipy.mean}
     
     y_hat = []
     y_true = []
     for idx in forest.trees:
         sub_frst = {k:forest.trees[k] for k in forest.trees if k != idx}
-        test_data = forest.trees[idx]['out_of_bag']
-        for row in test_data:
+        bag_data = forest.trees[idx]['out_of_bag']
+        for row in bag_data:
             leaves = [leaf(tree) for tree in sub_frst]
             y_hats_row = [node.prediction for node in leaves]
-            try:
-                y_hat.append(predict[forest.loss](y_hats_row))
-                y_true.append(row[forest.y])
-            except:
-                continue
+            y_hat.append(estimate[forest.loss](y_hats_row))
+            y_true.append(row[forest.y])
     
     p_ = forest.n_features
     ranges = [(0, 0) for x in range(len(y_hat))]    

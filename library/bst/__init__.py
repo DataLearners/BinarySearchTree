@@ -85,22 +85,29 @@ class Leaf:
         self.prediction = self.predict[config.LOSS_FUNC](self.y_true)
         
         key = (resp_col, idx, score, len(data))    
-        Leaf.instances[key] = self
+        try:
+            index = len(Leaf.instances[key])
+            Leaf.instances[key].update({index: self})
+        except KeyError:
+            Leaf.instances[key] = {0: self}
         
     def memo(data, resp_col, idx, score):
         key = (resp_col, idx, score, len(data))
         
         if key in Leaf.instances:
-            return(Leaf.instances[key])
+            for index in Leaf.instances[key]:
+                instance = Leaf.instances[key][index]
+                if data == instance.data:
+                    return(instance)
                    
         return(Leaf(data, resp_col, idx, score))
-               
+             
 class Decision:
     """A Decision Node asks a question. The question results in a true branch
     and a false branch in response to the question."""
     instances = {}
     counter = 0
-    
+
     def __init__(self, question, data, true_, false_, idx, score, gain):
         Decision.counter += 1
         self.question = question
@@ -112,7 +119,7 @@ class Decision:
         self.score = score
         self.gain = gain
         
-        key = (question.col_num, question.value, len(data), idx, score, gain)
+        key = (question.col_name, question.value, len(data), idx, score, gain)
         try:
             index = len(Decision.instances[key])
             Decision.instances[key].update({index: self})
@@ -120,7 +127,7 @@ class Decision:
             Decision.instances[key] = {0: self}
         
     def memo(question, data, true_, false_, idx, score, gain):
-        key = (question.col_num, question.value, len(data), idx, score, gain)
+        key = (question.col_name, question.value, len(data), idx, score, gain)
         if key in Decision.instances:
             for index in Decision.instances[key]:
                 check = []

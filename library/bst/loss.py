@@ -7,7 +7,6 @@ Created on Thu Dec  5 14:48:14 2019
 Module contains the loss function(s) to be optimized for the algorithm
 """
 import statistics
-
 import prep
 from bst import config
 
@@ -87,4 +86,38 @@ def info_gain(true_data, false_data, resp_col):
     if config.LOSS_FUNC == 'gini':
         return(gini_wgtd(true_data, false_data, resp_col))
     elif config.LOSS_FUNC == 'var':
-        return(var_wgtd(true_data, false_data, resp_col))   
+        return(var_wgtd(true_data, false_data, resp_col))  
+
+class Gain:
+    instances = {}
+    counter = 0
+    calc = {'gini': gini_wgtd, 'var': var_wgtd}
+    
+    def __init__(self, true_data, false_data, resp_col):
+        Gain.counter += 1
+        self.resp = resp_col
+        self.left = true_data
+        self.right = false_data
+        self.loss = config.LOSS_FUNC
+        self.value = Gain.calc[self.loss](true_data, false_data, resp_col)
+        
+        key = (len(true_data), len(false_data), resp_col)
+        try:
+            index = len(Gain.instances[key])
+            Gain.instances[key].update({index: self})
+        except KeyError:
+            Gain.instances[key] = {0: self}
+            
+    def memo(true_data, false_data, resp_col):
+
+        key = (len(true_data), len(false_data), resp_col)   
+        if key in Gain.instances:
+            for index in Gain.instances[key]:
+                instance = Gain.instances[key][index]
+                check = []
+                check.append(instance.left == true_data)
+                check.append(instance.right == false_data)
+                if(all(check)):
+                    return(instance)
+                    
+        return(Gain(true_data, false_data, resp_col))

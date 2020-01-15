@@ -1,4 +1,4 @@
-*/AccuracyPlots.png
+dir_to_ignore/Output
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
