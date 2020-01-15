@@ -35,7 +35,6 @@ def configure(data, resp, header, loss, min_gain, min_rows):
     
     config.Xcols = [i for i in range(len(data[0])) if i != resp]
     config.xnames = [header[i] for i in config.Xcols]
-    config.N_FEATURES = len(config.Xcols)
 
 class Question:
     """A question is used to partition a dataset into 
@@ -146,13 +145,16 @@ class Tree:
     features are seperated using Questions. Classification Trees and 
     Regression Trees depend on the loss function type."""
     nodes = {}
+    instances = {}
     
-    def __init__(self, data, resp, header, loss, min_gain=0, min_rows=1):
+    def __init__(self, data, resp, header, loss, min_gain=0, min_rows=1,
+                 n_features=1):
         configure(data, resp, header, loss, min_gain, min_rows)
         self.index = config.TREE_ID
         self.type = tree_types[loss]
         self.y = resp
         self.x = config.Xcols
+        config.N_FEATURES = n_features
         self.train_size = len(data)
         
         self.model = search.build_tree(data, resp)

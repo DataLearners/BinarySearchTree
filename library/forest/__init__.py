@@ -31,7 +31,8 @@ class Forest:
         for idx in range(n_trees):
             boot = prep.bootstrap(data)
             spill = prep.left_outer_exclude_b(data, boot)
-            tree = bst.Tree(boot, resp, header, loss, min_gain, min_rows)
+            tree = bst.Tree(boot, resp, header, loss, min_gain, 
+                            min_rows, n_features)
             self.trees[idx] = {'data': boot, 'out_of_bag': spill, 'tree': tree}
 
         self.out_bag_error = calc_out_of_bag_error(self)
