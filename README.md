@@ -1,9 +1,9 @@
 # Introduction 
-TODO: Give a short introduction of your project. Let this section explain the objectives or the motivation behind this project. 
+Custom Machine Learning classifier containing code for Random Forest and Decision Tree. The code is being leveraged for ML experiment on GFM organizational data. 
 
 # Getting Started
-TODO: Guide users through getting your code up and running on their own system. In this section you can talk about:
-1.	Installation process
+
+1.	To install ensure that the repo is cloned with 'data_science_poc' as the parent folder. The Startup module in each project folder depends on finding this folder on your hard drive.
 2.	Software dependencies
 3.	Latest releases
 4.	API references
