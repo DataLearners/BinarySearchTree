@@ -4,9 +4,8 @@ Custom Machine Learning classifier containing code for Random Forest and Decisio
 # Getting Started
 
 1.	To install ensure that the repo is cloned with 'data_science_poc' as the parent folder. The Startup module in each project folder depends on finding this folder on your hard drive.
-2.	Software dependencies
-3.	Latest releases
-4.	API references
+2.	The custom libraries are contained in 'library' folder. Each of these modules must be imported in the MainScript for the program to run. 
+
 
 # Build and Test
 TODO: Describe and show how to build your code and run the tests. 
