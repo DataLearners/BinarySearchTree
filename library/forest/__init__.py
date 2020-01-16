@@ -48,11 +48,8 @@ class Forest:
     def predict(self, test_data, conf=0.95):
         """Generate a set of predictions on a data set."""
         leaf = lambda tree: bst.classify(row, self.trees[tree]['tree'].model)
-                
-        y_hat = []
-        y_ = []
-        ranges = []
-        without_y = []
+        
+        y_hat, y_, ranges, without_y = [], [], [], []
         for row in test_data:
             leaves = [leaf(tree) for tree in self.trees]
             y_hats_row = [node.prediction for node in leaves]
@@ -72,15 +69,12 @@ class Forest:
             self.error, message = diagnosis
 
         print(message)
-        row = lambda i: [y_hat[i], y_[i], ranges[i], without_y[i]]
-        features = range(len(bst.config.HEADER))
-        head_minus_y = [bst.config.HEADER[i] for i in features if i != self.y]
-        titles = ["Prediction", "Y_true", "Interval", head_minus_y]
-        header = list(prep.flatten(titles))
-        
-        pred = [list(prep.flatten(row(i))) for i in range(len(y_))]
-        pDF = prep.ingest.ListDF(pred, header)
-        
+        head_len = range(len(config.HEADER))
+        head_minus_y = [config.HEADER[i] for i in head_len if i != self.y]
+        pDF = prep.ingest.ListDF(without_y, head_minus_y)
+        pred_head = ["Y_hat", config.HEADER[self.y], "Interval"]
+        pred = [[y_hat[i], y_[i], ranges[i]] for i in range(len(y_hat))]
+        pDF.paste(pred, pred_head)
         return(pDF)    
 
 @config.func_timer        
@@ -102,9 +96,12 @@ def calc_out_of_bag_error(forest):
             y_true.append(row[forest.y])
     
     p_ = forest.n_features
-    ranges = [(0, 0) for x in range(len(y_hat))]    
-    if forest.tree_type == 'RegressionTree':
-        return(bst.diagnostics.regression(y_hat, y_true, ranges, p_)[0])
+    ranges = [(0, 0) for x in range(len(y_hat))] 
     
+    #Mean Square Error for Regression Forest
+    if forest.tree_type == 'RegressionTree':
+        return(bst.diagnostics.regression(y_hat, y_true, ranges, p_)[3])
+    
+    #Accuracy for Classification Forest
     return(bst.diagnostics.classification(y_hat, y_true, ranges, p_)[0])
  

@@ -31,50 +31,30 @@ a = diab_forest.predict(test_data)
 resp = df.header.index('BMI')
 bmi_forest = Forest(train_data, resp, df.header, loss='var', n_features=3)
 print("BMI Out of bag error {}".format(bmi_forest.out_bag_error))
-b = bmi_forest.predict(test_data, conf=0.85)
+b = bmi_forest.predict(test_data, conf=0.75)
 
-from multiprocessing import Pool
-
-horiz = [i for i in range(3, 21, 3)]
-rsq = []
-obe = []
-mse = []
-def forest_graph(trees):
-    reg_forest = Forest(train_data, 5, df.header, loss='var', n_features=3,
+horiz = [trees for trees in range(3, 30, 3)]
+rsq, obe, mse = [], [], []
+for trees in horiz:
+    reg_forest = Forest(train_data, 5, df.header, loss='var', n_features=3, 
                         n_trees=trees)
-    pred = reg_forest.predict(test_data)
     print("{} trees Out bag error {}".format(trees, reg_forest.out_bag_error))
+    pred = reg_forest.predict(test_data)
     rsq.append(reg_forest.r_sq)
     obe.append(reg_forest.out_bag_error)
-    mse.append(reg_forest.mse)
-
-pool = Pool()
-pool.map(forest_graph, horiz)   
-
-#trees = 3
-#horiz, rsq, obe, mse = [], [], [], []
-#for i in range(10):
-#    horiz.append(trees)
-#    reg_forest = Forest(train_data, 5, df.header, loss='var',
-#                        n_features=3, n_trees=trees)
-#    print("{} trees Out bag error {}".format(trees, reg_forest.out_bag_error))
-#    pred = reg_forest.predict(test_data)
-#    rsq.append(reg_forest.r_sq)
-#    obe.append(reg_forest.out_bag_error)
-#    mse.append(reg_forest.mse)
-#    trees += 3
+    mse.append(reg_forest.mse) 
   
 plt.figure(figsize=(15, 12))
-plt.subplot(2,2,1)    
+plt.subplot(2, 2, 1)    
 x = np.asarray(horiz)
 plt.plot(x, np.asarray(rsq))
 plt.ylabel('R-Square')
 plt.xlabel('Trees')
-plt.subplot(2,2,2) 
+plt.subplot(2, 2, 2) 
 plt.plot(x, np.asarray(mse), label='MeanSqError')
 plt.ylabel('MeanSqError')
 plt.xlabel('Trees')
-plt.subplot(2,2,3)
+plt.subplot(2, 2, 3)
 plt.plot(x, np.asarray(obe), label='out of bag error')
 plt.ylabel('Error')
 plt.xlabel('Trees')
