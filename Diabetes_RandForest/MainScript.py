@@ -36,7 +36,7 @@ b = bmi_forest.predict(test_data, conf=0.75)
 horiz = [trees for trees in range(3, 30, 3)]
 rsq, obe, mse = [], [], []
 for trees in horiz:
-    reg_forest = Forest(train_data, 5, df.header, loss='var', n_features=3, 
+    reg_forest = Forest(train_data, 5, df.header, loss='var', n_features=2, 
                         n_trees=trees)
     print("{} trees Out bag error {}".format(trees, reg_forest.out_bag_error))
     pred = reg_forest.predict(test_data)

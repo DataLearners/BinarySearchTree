@@ -16,6 +16,7 @@ RESP_NAME = ''
 N_FEATURES = 0
 TREE_ID = 0
 N = 0
+FOREST = False
 
 import time, prep, matplotlib.pyplot as plt, numpy as np
 sort_func = lambda x: sorted(x, reverse=True)

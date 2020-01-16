@@ -15,6 +15,9 @@ a Gini Impurity loss function. Regression Trees use Variance.
 import prep, neat
 import scipy.stats
 
+mode = lambda x: max(set(x), key=x.count)
+estimate = {'gini': mode, 'var': scipy.mean}
+
 import neat.config as neat_config
 neat_config.MAX_WIDTH = 70
 neat_config.ROWS_TO_DISPLAY = 10
@@ -70,8 +73,6 @@ class Leaf:
     Regression Tree"""
     instances = {}
     counter = 0
-    mode = lambda x: max(set(x), key=x.count)
-    predict = {'gini': mode, 'var': scipy.mean}
     
     def __init__(self, data, resp_col, idx, score):
         Leaf.counter += 1
@@ -81,7 +82,7 @@ class Leaf:
         self.n = len(data)
         self.index = idx
         self.score = score
-        self.prediction = self.predict[config.LOSS_FUNC](self.y_true)
+        self.prediction = estimate[config.LOSS_FUNC](self.y_true)
         
         key = (resp_col, idx, score, len(data))    
         try:
@@ -147,16 +148,17 @@ class Tree:
     nodes = {}
     instances = {}
     
-    def __init__(self, data, resp, header, loss, min_gain=0, min_rows=1,
-                 n_features=1):
+    def __init__(self, data, resp, header, loss, min_gain=0, min_rows=1):
         configure(data, resp, header, loss, min_gain, min_rows)
+
         self.index = config.TREE_ID
-        self.type = tree_types[loss]
+        self.tree_type = tree_types[loss]
+        self.train_size = len(data)
         self.y = resp
         self.x = config.Xcols
-        config.N_FEATURES = n_features
-        self.train_size = len(data)
-        
+        if not config.FOREST:
+            config.N_FEATURES = len(config.Xcols)
+                
         self.model = search.build_tree(data, resp)
         self.nodes = search.pull_nodes(self.index)
         self.feature_importance = diagnostics.score_features(self)
@@ -178,32 +180,24 @@ class Tree:
         return("Tree Class attributes\n {}".format(neat.wrap(attr)))
     
     def traverse_to(self, index=0):
-        return(display.traverse(self, index))
-        
+        return(display.traverse(self, index)) 
+    
     def predict(self, test_data, conf=0.95):
         """Generate a set of predictions on a data set."""
         node = lambda row: classify(row, self.model)
-        int_ = lambda row: conf_interval(node(row).y_true, conf, self.type)
+        treetype = self.tree_type
+        interval = lambda row: conf_interval(node(row).y_true, conf, treetype)
         
-        ranges = [int_(row) for row in test_data]
-        y_ = [row[self.y] for row in test_data]
+        ranges = [interval(row) for row in test_data]
+        y_actual = [row[self.y] for row in test_data]
         y_hat = [node(row).prediction for row in test_data]
         leaves = [node(row).index for row in test_data]
-        p_ = len(self.feature_importance)
+        numpredictors = len(self.feature_importance)
         
-        if self.type == 'RegressionTree':
-            diagnosis = diagnostics.regression(y_hat, y_, ranges, p_)
-            self.error, self.r_sq, self.adj_rsq, self.mse, message = diagnosis
-        elif self.type == 'ClassificationTree':
-            diagnosis = diagnostics.classification(y_hat, y_, ranges, p_)
-            self.error, message = diagnosis
+        diagnostics.diagnose(self, y_hat, y_actual, ranges, numpredictors)
 
-        print(message)
-        feat_matrix = [[row[x] for x in self.x] for row in test_data]
-        names = [config.HEADER[x] for x in self.x]
-        pDF = prep.ingest.ListDF(feat_matrix, names)
-
-        row = lambda i: [leaves[i], y_hat[i], y_[i], ranges[i]]
+        pDF = featDF(self, test_data)
+        row = lambda i: [leaves[i], y_hat[i], y_actual[i], ranges[i]]
         pred = [row(i) for i in range(len(test_data))]
         pDF.paste(pred, config.PredHead)
         
@@ -223,17 +217,23 @@ def classify(row, node):
         return classify(row, node.false_branch)
 
 @config.func_timer   
-def conf_interval(y_true, conf, tree_type='RegressionTree'):
+def conf_interval(y_list, conf, tree_type='RegressionTree'):
     """For the variance loss function, return the mean of the y feature 
     and a confidence interval around the mean."""
     if tree_type != 'RegressionTree': 
         return(None, None)
     
-    mu, se = scipy.mean(y_true), 0
-    if len(y_true) > 1:
-        se = scipy.stats.sem(y_true)
+    mu, se = scipy.mean(y_list), 0
+    if len(y_list) > 1:
+        se = scipy.stats.sem(y_list)
     if se == 0:
         return(0, 0)
     
     low, high = scipy.stats.norm.interval(conf, mu, se)
     return(low, high)
+
+def featDF(obj, data):
+    feat_matrix = [[row[x] for x in obj.x] for row in data]
+    feat_names = [config.HEADER[x] for x in obj.x]
+    return(prep.ingest.ListDF(feat_matrix, feat_names))
+

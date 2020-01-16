@@ -21,7 +21,11 @@ class Forest:
     
     def __init__(self, data, resp, header, loss, 
                  min_gain=0, min_rows=1, n_features=1, n_trees=10):
+        config.FOREST = True
+        config.N_FEATURES = n_features
         self.n_features = n_features
+        
+        self.x = [i for i in range(len(data[0])) if i != resp]
         self.y = resp
         self.loss = loss
         self.type = frst_types[loss]
@@ -31,8 +35,7 @@ class Forest:
         for idx in range(n_trees):
             boot = prep.bootstrap(data)
             spill = prep.left_outer_exclude_b(data, boot)
-            tree = bst.Tree(boot, resp, header, loss, min_gain, 
-                            min_rows, n_features)
+            tree = bst.Tree(boot, resp, header, loss, min_gain, min_rows)
             self.trees[idx] = {'data': boot, 'out_of_bag': spill, 'tree': tree}
 
         self.out_bag_error = calc_out_of_bag_error(self)
@@ -49,32 +52,21 @@ class Forest:
         """Generate a set of predictions on a data set."""
         leaf = lambda tree: bst.classify(row, self.trees[tree]['tree'].model)
         
-        y_hat, y_, ranges, without_y = [], [], [], []
+        y_hat, y_true, ranges = [], [], []
         for row in test_data:
             leaves = [leaf(tree) for tree in self.trees]
             y_hats_row = [node.prediction for node in leaves]
             y_hat.append(estimate[self.loss](y_hats_row))
-            y_.append(row[self.y])
+            y_true.append(row[self.y])
             interval = bst.conf_interval(y_hats_row, conf, self.tree_type)
             ranges.append(interval)
-            feature_row = [row[i] for i in range(len(row)) if i != self.y]
-            without_y.append(feature_row)
         
-        p_ = self.n_features
-        if self.tree_type == 'RegressionTree':
-            diagnosis = bst.diagnostics.regression(y_hat, y_, ranges, p_)
-            self.error, self.r_sq, self.adj_rsq, self.mse, message = diagnosis
-        elif self.tree_type == 'ClassificationTree':
-            diagnosis = bst.diagnostics.classification(y_hat, y_, ranges, p_)
-            self.error, message = diagnosis
+        numpredictors = self.n_features
+        bst.diagnostics.diagnose(self, y_hat, y_true, ranges, numpredictors)
 
-        print(message)
-        head_len = range(len(config.HEADER))
-        head_minus_y = [config.HEADER[i] for i in head_len if i != self.y]
-        pDF = prep.ingest.ListDF(without_y, head_minus_y)
-        pred_head = ["Y_hat", config.HEADER[self.y], "Interval"]
-        pred = [[y_hat[i], y_[i], ranges[i]] for i in range(len(y_hat))]
-        pDF.paste(pred, pred_head)
+        pDF = bst.featDF(self, test_data)
+        pred = [[y_hat[i], y_true[i], ranges[i]] for i in range(len(test_data))]
+        pDF.paste(pred, ["y_hat", bst.config.HEADER[self.y], "Interval"])
         return(pDF)    
 
 @config.func_timer        
@@ -95,13 +87,15 @@ def calc_out_of_bag_error(forest):
             y_hat.append(estimate[forest.loss](y_hats_row))
             y_true.append(row[forest.y])
     
-    p_ = forest.n_features
+    numpredictors = forest.n_features
     ranges = [(0, 0) for x in range(len(y_hat))] 
     
     #Mean Square Error for Regression Forest
     if forest.tree_type == 'RegressionTree':
-        return(bst.diagnostics.regression(y_hat, y_true, ranges, p_)[3])
+        func = bst.diagnostics.regression
+        return(func(y_hat, y_true, ranges, numpredictors)[3])
     
     #Accuracy for Classification Forest
-    return(bst.diagnostics.classification(y_hat, y_true, ranges, p_)[0])
+    func = bst.diagnostics.classification
+    return(func(y_hat, y_true, ranges, numpredictors)[0])
  

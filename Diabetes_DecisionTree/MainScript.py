@@ -24,7 +24,7 @@ df.transform_col(yes_no, 'Outcome')
 train_data, test_data = prep.split_train_test(df.data, tst_prop=0.3)
 
 y = df.header.index('Outcome')
-diab_tree = bst.Tree(train_data, y, df.header, loss='gini', n_features=9)
+diab_tree = bst.Tree(train_data, y, df.header, loss='gini')
 diab_pred = diab_tree.predict(test_data)
 leaf = random.sample(diab_tree.leaves, 1)[0]
 diab_tree.traverse_to(leaf)
@@ -34,8 +34,7 @@ filename= "Diabetes_MarkedTrainingData.csv"
 diab_tree.marked_data.export(filename, folder=outputpath)
 
 y = df.header.index('BMI')
-bmi_tree = bst.Tree(train_data, y, df.header, loss='var', 
-                    min_rows=15, n_features=9)
+bmi_tree = bst.Tree(train_data, y, df.header, loss='var', min_rows=15)
 filename = "BMI_Predictions.csv"
 bmi_tree.predict(test_data, conf=0.8).export(filename, folder=outputpath)
 leaf = random.sample(bmi_tree.leaves, 1)[0]
@@ -50,8 +49,7 @@ y = df.header.index('BMI')
 for i in range(20):
     horiz.append(rows)
     rows += 5
-    bmi_tree = bst.Tree(train_data, y, df.header, loss='var', 
-                        min_rows=rows, n_features=9)
+    bmi_tree = bst.Tree(train_data, y, df.header, loss='var', min_rows=rows)
     print("Min Rows {}".format(rows))
     pred = bmi_tree.predict(test_data, conf=0.9)
     mse.append(bmi_tree.mse)

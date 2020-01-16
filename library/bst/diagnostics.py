@@ -129,4 +129,16 @@ def classification(y_hat, y_true, intervals, predictors):
         msg = "Testing on {} rows Accuracy {:.2%}\n".format(n_, 1-error)
         return(error, msg)
         
-      
+def diagnose(obj, y_hat, y_true, ranges, numpredictors):
+    """Assigns the error and goodness of fit attributes to a Decision Tree
+    or a Random Forest"""
+    
+    if obj.tree_type == 'RegressionTree':
+        diagnosis = regression(y_hat, y_true, ranges, numpredictors)
+        obj.error, obj.r_sq, obj.adj_rsq, obj.mse, msg = diagnosis
+
+    elif obj.tree_type == 'ClassificationTree':
+        obj.error, msg = classification(y_hat, y_true, ranges, numpredictors)
+
+    print(msg)
+    return
