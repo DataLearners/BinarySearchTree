@@ -4,10 +4,8 @@ Created on Wed Nov 20 18:25:53 2019
 
 @author: Douglas Brown
 """
-import math, bst
-from bst import config
-
-@config.func_timer 
+import math, bst, neat
+ 
 def find_branch(i, ancestors = None):
     """Recursive function to find the ancestors of a particular node
     ancestors = None is necessary to keep the recursive function from 
@@ -21,7 +19,6 @@ def find_branch(i, ancestors = None):
     ancestors.append(i) #Due to recursion its i and not parent
     return find_branch(parent, ancestors)
 
-@config.func_timer 
 def get_answers(position):
     """Record all of the answers to questions that occur on a branch.
     Yes -> 2k, No -> 2k+1 where k is the preceding node
@@ -33,7 +30,6 @@ def get_answers(position):
     outcomes = nxtnode(branch)  
     return(list(map(decide, branch, outcomes)))
 
-@config.func_timer 
 def print_tree(node, spacing="" ):
     """print_tree(my_tree.model)"""
     if isinstance(node, bst.Leaf):
@@ -46,7 +42,6 @@ def print_tree(node, spacing="" ):
     print (spacing + '--> False:')
     print_tree(node.false_branch, spacing + "  ") 
 
-@config.func_timer 
 def print_counts(counts):
     """A nicer way to print count values in a dictionary."""
     total = sum(counts.values()) * 1.0
@@ -55,7 +50,6 @@ def print_counts(counts):
         probs[lbl] = '{:.0%}'.format(counts[lbl] / total)
     return probs 
 
-@config.func_timer  
 def traverse(tree, position):
     """Given a node in the tree recreate the decisions that
     occur to reach the node. """
@@ -65,7 +59,7 @@ def traverse(tree, position):
     print("Traversing the tree to node {}...".format(position))
     for pair in pairs:
         idx, answer = pair[0], pair[1]
-        score = round(tree(idx).score, config.SIG_DIGITS)
+        score = round(tree(idx).score, neat.config.SIG_DIGITS)
         print("Node({}) Rows {} Score {}".format(idx, tree(idx).n, score))
         if isinstance(tree(idx), bst.Decision):
             print("\t{} {}".format(tree(idx).question, answer))

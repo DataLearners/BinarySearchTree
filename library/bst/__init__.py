@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 #package setup
-from bst import config
 from bst import search
 from bst import diagnostics
 from bst import display
+from bst import lossfuncs
 """
 Created on Wed Nov 20 18:25:53 2019
 
@@ -14,39 +14,19 @@ a Gini Impurity loss function. Regression Trees use Variance.
 """
 import prep, neat
 import scipy.stats
+from memo import Memo
 
-mode = lambda x: max(set(x), key=x.count)
-estimate = {'gini': mode, 'var': scipy.mean}
-
-import neat.config as neat_config
-neat_config.MAX_WIDTH = 70
-neat_config.ROWS_TO_DISPLAY = 10
-neat_config.SIG_DIGITS = 3
-
-def configure(data, resp, header, loss, min_gain, min_rows):
-    config.RESP = resp
-    config.HEADER = header
-    config.LOSS_FUNC = loss
-    config.MIN_GAIN = min_gain
-    config.MIN_ROWS = min_rows
-    
-    config.TREE_ID += 1
-    config.N = len(data)
-    config.RESP_NAME = header[resp]
-    
-    config.PredHead = ["Leaf", "y_hat", header[resp], "Interval"]
-    
-    config.Xcols = [i for i in range(len(data[0])) if i != resp]
-    config.xnames = [header[i] for i in config.Xcols]
-
+neat.config.MAX_WIDTH = 70
+neat.config.ROWS_TO_DISPLAY = 10
+neat.config.SIG_DIGITS = 3
+        
 class Question:
-    """A question is used to partition a dataset into 
-    true and false answers"""
-    
-    def __init__(self, col_num, value):
+    """A question is used to partition a dataset into true and false answers"""
+   
+    def __init__(self, col_num, value, header):   
         self.col_num = col_num
         self.value = value
-        self.col_name = config.HEADER[col_num]
+        self.col_name = header[col_num]
                
     def match(self, row):
         """Compare the feature value in a row to the 
@@ -61,106 +41,61 @@ class Question:
         condition = "=="
         val = self.value
         if prep.is_numeric(self.value):
-            val = round(self.value, config.SIG_DIGITS)
+            val = round(self.value, 2)
             condition = ">="
             
         str_val = str(val)
         return("Is {} {} {}?".format(self.col_name, condition, str_val))
 
-class Leaf:
+class Leaf(Memo):
     """A Leaf node predicts the response based on the data. It predicts
     mode in the case of Classification Tree and mean in the case of 
     Regression Tree"""
-    instances = {}
-    counter = 0
     
-    def __init__(self, data, resp_col, idx, score):
-        Leaf.counter += 1
-        self.data = data
+    def __init__(self, resp_col, idx, score, data, settings):
+        Memo.__call__(self, resp_col, idx, score, data=data)
+        
         self.resp_col = resp_col
         self.y_true = [row[resp_col] for row in data]
         self.n = len(data)
         self.index = idx
         self.score = score
-        self.prediction = estimate[config.LOSS_FUNC](self.y_true)
+        self.loss_func = settings.loss_func
+        self.tree = settings.tree_idx
         
-        key = (resp_col, idx, score, len(data))    
-        try:
-            index = len(Leaf.instances[key])
-            Leaf.instances[key].update({index: self})
-        except KeyError:
-            Leaf.instances[key] = {0: self}
-        
-    def memo(data, resp_col, idx, score):
-        key = (resp_col, idx, score, len(data))
-        
-        if key in Leaf.instances:
-            for index in Leaf.instances[key]:
-                instance = Leaf.instances[key][index]
-                if data == instance.data:
-                    return(instance)
-                   
-        return(Leaf(data, resp_col, idx, score))
+        mode = lambda x: max(set(x), key=x.count)
+        estimate = {'gini': mode, 'var': scipy.mean}
+        self.prediction = estimate[settings.loss_func](self.y_true)
              
-class Decision:
+class Decision(Memo):
     """A Decision Node asks a question. The question results in a true branch
     and a false branch in response to the question."""
-    instances = {}
-    counter = 0
 
     def __init__(self, question, data, true_, false_, idx, score, gain):
-        Decision.counter += 1
-        self.question = question
-        self.true_branch = true_
-        self.false_branch = false_
-        self.data = data
+        Memo.__call__(self, idx, score, gain, question=question, 
+                      true_branch=true_, false_branch=false_, data=data)
         self.n = len(data)
         self.index = idx
         self.score = score
         self.gain = gain
-        
-        key = (question.col_name, question.value, len(data), idx, score, gain)
-        try:
-            index = len(Decision.instances[key])
-            Decision.instances[key].update({index: self})
-        except KeyError:
-            Decision.instances[key] = {0: self}
-        
-    def memo(question, data, true_, false_, idx, score, gain):
-        key = (question.col_name, question.value, len(data), idx, score, gain)
-        if key in Decision.instances:
-            for index in Decision.instances[key]:
-                check = []
-                instance = Decision.instances[key][index]
-                check.append(instance.data == data)
-                check.append(vars(instance.true_branch) == vars(true_))
-                check.append(vars(instance.false_branch) == vars(false_))
-                if(all(check)):
-                    return(instance)
-                    
-        return(Decision(question, data, true_, false_, idx, score, gain))
 
-tree_types = {'var':'RegressionTree', 'gini':'ClassificationTree'}
 class Tree:
     """Decision Tree class. Performs binary search. Binary refers to how the
     features are seperated using Questions. Classification Trees and 
     Regression Trees depend on the loss function type."""
     nodes = {}
-    instances = {}
+#    instances = {}
+    counter = 0
     
-    def __init__(self, data, resp, header, loss, min_gain=0, min_rows=1):
-        configure(data, resp, header, loss, min_gain, min_rows)
-
-        self.index = config.TREE_ID
-        self.tree_type = tree_types[loss]
-        self.train_size = len(data)
-        self.y = resp
-        self.x = config.Xcols
-        if not config.FOREST:
-            config.N_FEATURES = len(config.Xcols)
-                
-        self.model = search.build_tree(data, resp)
-        self.nodes = search.pull_nodes(self.index)
+    def __init__(self, data, resp_col, header, loss, 
+                 min_gain=0, min_rows=1, forest=False, n_features=1):
+        Tree.counter += 1
+        self.configs = Settings(data, resp_col, header, loss, 
+                           min_gain, min_rows, forest, n_features)        
+        
+        self.model = search.build_tree(self.configs, data, resp_col)
+        self.nodes = search.pull_nodes(self.configs.tree_idx)
+        self.height = search.height(self.nodes)
         self.feature_importance = diagnostics.score_features(self)
         
         self.tree_array = diagnostics.tree_summary(self)
@@ -174,7 +109,7 @@ class Tree:
         
     def __call__(self, index=1):
         return(self.nodes[index])
-   
+      
     def __str__(self):
         attr = "{}".format([x for x in dir(self) if "__" not in x])
         return("Tree Class attributes\n {}".format(neat.wrap(attr)))
@@ -184,26 +119,55 @@ class Tree:
     
     def predict(self, test_data, conf=0.95):
         """Generate a set of predictions on a data set."""
+        settings = self.configs
+        
         node = lambda row: classify(row, self.model)
-        treetype = self.tree_type
-        interval = lambda row: conf_interval(node(row).y_true, conf, treetype)
+        ytrue = lambda row: node(row).y_true
+        loss = settings.loss_func
+        interval = lambda row: conf_interval(ytrue(row), conf, loss)
         
         ranges = [interval(row) for row in test_data]
-        y_actual = [row[self.y] for row in test_data]
+        y_actual = [row[settings.y] for row in test_data]
         y_hat = [node(row).prediction for row in test_data]
         leaves = [node(row).index for row in test_data]
         numpredictors = len(self.feature_importance)
         
         diagnostics.diagnose(self, y_hat, y_actual, ranges, numpredictors)
 
-        pDF = featDF(self, test_data)
+        pDF = search.featDF(self, test_data)
         row = lambda i: [leaves[i], y_hat[i], y_actual[i], ranges[i]]
         pred = [row(i) for i in range(len(test_data))]
-        pDF.paste(pred, config.PredHead)
+        pDF.paste(pred, settings.predhead)
         
         return(pDF)
 
-@config.func_timer 
+class Settings:
+    """Settings for the Binary Search Tree that persist between all of the 
+    modules in the library"""
+    
+    def __init__(self, data, resp, header, loss, min_gain, min_rows, 
+                 forest, n_features):
+        self.y = resp
+        self.data = data
+        self.loss_func = loss
+        self.min_gain = min_gain
+        self.min_rows = min_rows
+        tree_types = {'var':'RegressionTree', 'gini':'ClassificationTree'}
+        self.tree_type = tree_types[loss]
+        self.tree_idx = Tree.counter
+        self.N = len(data)
+        self.xcols = [i for i in range(len(data[0])) if i != resp]
+        self.header = header
+        self.yname = header[resp]
+        self.predhead = ["Leaf", "y_hat", self.yname, "Interval"]
+        self.xnames = [header[i] for i in self.xcols]
+        
+        if not forest:
+            self.n_features = len(self.xcols)
+        else:
+            self.n_features = n_features
+            self.predhead = ["y_hat", self.yname, "Interval"]
+
 def classify(row, node):
     """Recursive function for returning Leaf node.
     Base case: reach a Leaf node
@@ -216,11 +180,10 @@ def classify(row, node):
     else:
         return classify(row, node.false_branch)
 
-@config.func_timer   
-def conf_interval(y_list, conf, tree_type='RegressionTree'):
+def conf_interval(y_list, conf, loss_func='var'):
     """For the variance loss function, return the mean of the y feature 
     and a confidence interval around the mean."""
-    if tree_type != 'RegressionTree': 
+    if loss_func != 'var': 
         return(None, None)
     
     mu, se = scipy.mean(y_list), 0
@@ -232,8 +195,7 @@ def conf_interval(y_list, conf, tree_type='RegressionTree'):
     low, high = scipy.stats.norm.interval(conf, mu, se)
     return(low, high)
 
-def featDF(obj, data):
-    feat_matrix = [[row[x] for x in obj.x] for row in data]
-    feat_names = [config.HEADER[x] for x in obj.x]
-    return(prep.ingest.ListDF(feat_matrix, feat_names))
+    
+    
+    
 

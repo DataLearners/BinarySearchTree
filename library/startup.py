@@ -2,18 +2,17 @@
 """
 Created on Mon Nov 25 09:31:26 2019
 root refers to a folder path
-@author: BROWNDC
+@author: Douglas Brown
 """
-import os, sys
-MY_DIR = os.environ['USERPROFILE']
-MY_LIBRARY = ''
+import os
+MY_DIR = ''
 
-def find_root(name, path=MY_DIR):
+def find_root(name, path):
     for root, dirs, files in os.walk(path):
         if name in root:
             return(root)
         
-def find_subroot(partial_path, path=MY_DIR):
+def find_subroot(partial_path, path):
     """Returns the root containing all of the names in the partial path"""
     try:
         names = partial_path.split('/')
@@ -26,11 +25,11 @@ def find_subroot(partial_path, path=MY_DIR):
         if all(name in root for name in names):
             return(root)
         
-def find_file(name, path=MY_DIR):
+def find_file(name, path):
     for root, dirs, files in os.walk(path):
         if name in files:
             return os.path.join(root, name)
-
+        
 def make_folder(path):
     try:
         os.mkdir(path)
@@ -38,6 +37,3 @@ def make_folder(path):
         print ("Creation of the directory %s failed" % path)
     else:
         print ("Successfully created the directory %s " % path)
-
-MY_LIBRARY = find_subroot('data_science_poc\\library')
-sys.path.append(MY_LIBRARY)

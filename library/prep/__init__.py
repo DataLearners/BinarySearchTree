@@ -10,16 +10,16 @@ import random
 
 def is_empty(any_structure):
     if any_structure:
-#        print('Structure is not empty.')
+        print('Structure is not empty.')
         return False
     else:
-#        print('Structure is empty.')
+        print('Structure is empty.')
         return True
 
 def num_cols(sheet):
     """ Find the number of columns in a sheet"""
     cols = [len(sheet[row]) for row in range(len(sheet))]       
-    return(max(cols)) 
+    return(max(cols, default=0)) 
     
 def colmin(xlist, colnum):
     """Find the row containing the minimum of a column"""
@@ -83,14 +83,21 @@ def get_key(val, my_dict):
              return key 
     return "key doesn't exist"
 
+def sortdict(my_dict, descending=True, sortbykeys=False):
+    """Sorts dictionary by key or values"""
+    if sortbykeys:
+        keys = sorted(my_dict.keys(), reverse=descending) 
+        return({k:my_dict[k] for k in keys})
+        
+    values = sorted(my_dict.values(), reverse=descending)
+    return({get_key(v, my_dict):v for v in values})
+
 def first_n_pairs(index, my_dict, descending=True):
-    """get the first k,v pairs of a dictionary"""
-    sort_ = lambda x: sorted(x, reverse=descending)
-    sort_dict = lambda d: {get_key(v, d):v for v in sort_(d.values())}
-    
-    sorted_dict = sort_dict(my_dict)
-    keys_ = list(sorted_dict.keys())
-    return({k:sorted_dict[k] for k in keys_[:index]}) 
+    """get the first k,v pairs of a dictionary"""   
+    sorted_dict = sortdict(my_dict, descending, sortbykeys=False)
+    keys = list(sorted_dict.keys())
+    pairs = {k:sorted_dict[k] for k in keys[:index]}
+    return(pairs) 
 
 def dup_rows(rows):
     """Find and return all of the duplicate rows in a data set"""

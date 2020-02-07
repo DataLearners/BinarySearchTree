@@ -54,7 +54,7 @@ class ListDF:
         for i in range(len(header)):
             title = header[i]
             column = [row[i] for row in rows]
-            exec("self.{} = {}".format(title, column))
+            setattr(self, title, column)
     
     def __call__(self, col_idx=0):
         return([row[col_idx] for row in self.data])

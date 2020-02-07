@@ -5,15 +5,15 @@ Created on Wed Nov 20 18:25:53 2019
 @author: Douglas Brown
 """
 import bst, prep
-from bst import config
+import times
 from sklearn.metrics import r2_score, mean_squared_error
 
 flat = lambda x: list(prep.flatten(x))
 
-@config.func_timer   
+@times.func_timer   
 def score_features(tree, standardize=True):
     """Find the feature importance in the tree"""
-    importance = {x:0 for x in config.HEADER}
+    importance = {x:0 for x in tree.configs.header}
     for idx, node in tree.nodes.items():
         if isinstance(node, bst.Decision):
             feature = node.question.col_name
@@ -32,23 +32,23 @@ def score_features(tree, standardize=True):
 
     return(scores)
         
-@config.func_timer 
+@times.func_timer 
 def indicators(tree, idx):
     """Identifies the features used for making predictions on a leaf. Function
     returns an indicator vector for all of the features"""
     if isinstance(tree.nodes[idx], bst.Leaf):
-        feature_row = [0 for i in config.HEADER]
+        feature_row = [0 for i in tree.configs.header]
         indices = bst.display.find_branch(idx)[:-1]
         for key in indices:
             feature_row[tree.nodes[key].question.col_num] = 1
     
-        feature_row.pop(config.RESP)
+        feature_row.pop(tree.configs.y)
         return(feature_row) 
 
-@config.func_timer 
+@times.func_timer 
 def leaf_summary(tree):
     """Summary of the features in each leaf"""
-    header = flat(["Leaf", "Rows", "Score", config.xnames])
+    header = flat(["Leaf", "Rows", "Score", tree.configs.xnames])
     matrix = []
     for idx, node in tree.nodes.items():
         if isinstance(node, bst.Leaf):
@@ -57,11 +57,11 @@ def leaf_summary(tree):
             
     return(prep.ingest.ListDF(matrix, header))
 
-@config.func_timer  
+@times.func_timer  
 def mark(tree):
     """Add column to the training data that specifies the Leaf for each row"""
     
-    header = flat(["Leaf_idx", bst.config.HEADER])
+    header = flat(["Leaf_idx", tree.configs.header])
     marked_data = []
     for idx, node in tree.nodes.items():
         if isinstance(node, bst.Leaf):
@@ -71,7 +71,7 @@ def mark(tree):
             
     return(prep.ingest.ListDF(marked_data, header)) 
 
-@config.func_timer 
+@times.func_timer 
 def tree_summary(tree):
     """Summary of the nodes in the tree"""
     row = lambda x:[x.index, "Decision", str(x.question), x.n, x.score, x.gain]
@@ -88,7 +88,7 @@ def tree_summary(tree):
     summaryDF.sort_col(colname="Index")
     return(summaryDF)
 
-@config.func_timer 
+@times.func_timer 
 def classify_nodes(tree):
     """Find all indices for Decision and Leaf nodes"""
     leaves, decisions = [], []
@@ -101,7 +101,7 @@ def classify_nodes(tree):
 
     return(sorted(leaves), sorted(decisions))
 
-@config.func_timer    
+@times.func_timer    
 def regression(y_hat, y_true, intervals, predictors):
         n_ = len(y_hat)
         r_sq = r2_score(y_true, y_hat)
@@ -112,15 +112,18 @@ def regression(y_hat, y_true, intervals, predictors):
         accuracy = [btwn(y_true[i], pair) for i, pair in enumerate(intervals)]
         error = accuracy.count(False)/n_
         
-        txt = "Testing on {0[0]} rows Accuracy {0[1]:.2%}"
-        msg_basic = txt.format([n_, 1-error])
+#        txt = "Testing on {0[0]} rows Accuracy {0[1]:.2%}"
+#        msg_basic = txt.format([n_, 1-error])       
+        txt = "Testing on {0[0]} rows"
+        msg_basic = txt.format([n_])
+        
         txt = "RSq {0[0]:.0%} AdjRSq {0[1]:.0%} MSE {0[2]:.2f}\n"
         msg_reg = txt.format([r_sq, adj_rsq, mse])
         msg = msg_basic + "\n" + msg_reg
         
         return(error, r_sq, adj_rsq, mse, msg)
         
-@config.func_timer    
+@times.func_timer    
 def classification(y_hat, y_true, intervals, predictors):
         n_ = len(y_hat)
         accuracy = [y_hat[i] == y_true[i] for i in range(n_)]
@@ -128,16 +131,17 @@ def classification(y_hat, y_true, intervals, predictors):
         
         msg = "Testing on {} rows Accuracy {:.2%}\n".format(n_, 1-error)
         return(error, msg)
-        
+
+@times.func_timer        
 def diagnose(obj, y_hat, y_true, ranges, numpredictors):
     """Assigns the error and goodness of fit attributes to a Decision Tree
     or a Random Forest"""
     
-    if obj.tree_type == 'RegressionTree':
+    if obj.configs.tree_type == 'RegressionTree':
         diagnosis = regression(y_hat, y_true, ranges, numpredictors)
         obj.error, obj.r_sq, obj.adj_rsq, obj.mse, msg = diagnosis
 
-    elif obj.tree_type == 'ClassificationTree':
+    elif obj.configs.tree_type == 'ClassificationTree':
         obj.error, msg = classification(y_hat, y_true, ranges, numpredictors)
 
     print(msg)

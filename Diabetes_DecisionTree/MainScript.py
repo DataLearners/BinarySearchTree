@@ -1,18 +1,30 @@
 # -*- coding: utf-8 -*-
+import os, sys
+MY_DIR = os.environ['USERPROFILE']
+
+def find_root(name, path):
+    for root, dirs, files in os.walk(path):
+        if name in root:
+            return(root)
+
+MY_LIBRARY = find_root('RandomForest\\library', MY_DIR)
+sys.path.append(MY_LIBRARY)
+import startup
+
 """
 Split dataset into training set and test set
 70% training and 30% test
 Key attributes of Tree are leaf_matrix, marked_data, tree_array, predict()
 """
 import random, matplotlib.pyplot as plt, numpy as np
-import startup, prep, bst
+import prep, bst
 import prep.ingest as ingest
 
 random.seed(10)
-datapath = 'data_science_poc\\Diabetes_DecisionTree\\Dataset'
-datafolder = startup.find_subroot(datapath)
+datapath = 'RandomForest\\Dataset'
+datafolder = startup.find_subroot(datapath, MY_DIR)
 startup.make_folder('Output')
-outputpath = startup.find_subroot('Diabetes_DecisionTree\\Output')
+outputpath = startup.find_subroot('Diabetes_DecisionTree\\Output', MY_DIR)
 files = ingest.Folder(datafolder)
 files()
  
