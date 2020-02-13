@@ -1,19 +1,41 @@
-# Introduction 
-Custom Machine Learning classifier containing code for Random Forest and Decision Tree. The code is being leveraged for ML experiment on GFM organizational data. 
-
-# Getting Started
-
-1.	To install ensure that the repo is cloned with 'data_science_poc' as the parent folder. The Startup module in each project folder depends on finding this folder on your hard drive.
-2.	The custom libraries are contained in 'library' folder. Each of these modules must be imported in the MainScript for the program to run. 
 
 
-# Build and Test
-TODO: Describe and show how to build your code and run the tests. 
+## Setting up Visual Studio Code
 
-# Contribute
-TODO: Explain how other users and developers can contribute to make your code better. 
+https://stackoverflow.com/questions/1899436/pylint-unable-to-import-error-how-to-set-pythonpath
 
-If you want to learn more about creating good readme files then refer the following [guidelines](https://docs.microsoft.com/en-us/azure/devops/repos/git/create-a-readme?view=azure-devops). You can also seek inspiration from the below readme files:
-- [ASP.NET Core](https://github.com/aspnet/Home)
-- [Visual Studio Code](https://github.com/Microsoft/vscode)
-- [Chakra Core](https://github.com/Microsoft/ChakraCore)
+pylint rc
+https://gist.github.com/xen/6334976
+
+
+## Multi Processor Strategy
+
+Map Reduce at the tree level.
+
+Each tree gets its own processor.
+Trees will only know about each other in the reduce part of the map reduce.
+
+
+## Domain Defined
+
+main
+    tree = TreeBuilder(TreeArgs)
+    diagnostics = TreeDiagnostics(DiagArgs, tree, tree_args)
+
+Tree - data class its the final output after running all the calculations. For the most part it is imutable.
+TreeArgs - The settings to build a tree
+TreeBuilder - Methods to generate a tree
+TreeDiagnostics - checks to see if the tree was built correctly
+
+Leaf - 
+Decisions
+Questions
+
+Forest - final output mostly imutable
+Forest - 
+
+
+
+# Things to research
+
+How to import libraries into Zeplin or will we just have one big file?
