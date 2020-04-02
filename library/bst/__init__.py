@@ -1,1266 +1,827 @@
-"""Big __init__ file containing all functions"""
+"""The Binary Search Tree module utilizes tree and forest hyperparameters
+to construct binary search trees from Nodes, Questions, and Splits. The
+binary search is a recursive greedy algorithm"""
+
 import os
 import csv
+import copy
 import math
 import numbers
-import random
 import statistics
-from statistics import mean
-import textwrap
+import random
 from sklearn.metrics import r2_score, mean_squared_error
 import scipy.stats
+import pprint as pp
+import time
+start = time.time()
 
-##Settings###############################
-class Loss:
-    """Controlling for misspelling of the names of the loss functions used
-    to control the types of Decision Trees generated"""
-    gini = "gini"
-    var = "var"
 
-class Settings:
-    """Settings for the Binary Search Tree that persist between all of the
-    modules in the library"""
-
-    def __init__(self, data, ycol, header, loss_func, min_gain, min_rows,
-                 forest, n_features, n_trees=1, sigdigits=3):
-        self.y = ycol
-        self.data = data
-        self.loss_func = loss_func
-        self.min_gain = min_gain
-        self.min_rows = min_rows
-        self.tree_type = classify_tree(loss_func)
-        self.tree_idx = Tree.counter
-        self.N = len(data)
-        self.xcols = get_xcols(data, ycol)
-        self.header = header
-        self.yname = header[ycol]
-        self.xnames = get_xnames(header, data, ycol)
-        self.n_features = get_nfeatures(n_features, self.xnames, forest)
-        self.forest = forest
-        self.n_trees = n_trees
-        self.sigdigits = sigdigits
-
-def get_nfeatures(n_features, xnames, forest=False):
-    featurevals = {True: n_features, False: len(xnames)}
-    return featurevals[forest]
-
-def get_xcols(data, ycol):
-    colrange = range(len(data[0]))
-    return [i for i in colrange if i != ycol]
-
-def get_xnames(header, data, ycol):
-    colrange = range(len(data[0]))
-    return [header[i] for i in colrange if i != ycol]
-
-def classify_tree(loss_func):
-    tree_types = {Loss.var:'Regression', Loss.gini:'Classification'}
-    return tree_types[loss_func]
-
-##Tree Parts########################
-class Question:
-    """A question is used to partition a dataset into true and false answers
-    """
-    def __init__(self, col_num, value, header):
-        self.header = header
-        self.col_num = col_num
-        self.value = value
-        self.col_name = header[col_num]
-
-    def match(self, row):
-        """Compare the feature value in a row to the
-        feature value in question."""
-        val = row[self.col_num]
-        if is_numeric(val):
-            return val >= self.value
-        if type(val) == str:
-            return val == self.value
-
-    def __repr__(self):
-        condition = "=="
-        val = self.value
-        if is_numeric(self.value):
-            val = round(self.value, 3)
-            condition = ">="
-
-        str_val = str(val)
-        return "Is {} {} {}?".format(self.col_name, condition, str_val)
-
-class Leaf:
-    """A Leaf node predicts the response based on the data. It predicts
-    mode in the case of Classification Tree and mean in the case of
-    Regression Tree"""
-
-    def __init__(self, ycol, idx, score, gain, data, settings):
-        self.ycol = ycol
-        self.ytrue = pull_y(data, ycol)
-        self.index = idx
-        self.score = score
-        self.gain = gain
-        self.data = data
-        self.n = len(data)
-        self.tree = settings.tree_idx
-        self.prediction = predict(settings.loss_func, self.ytrue)
-
-def pull_y(data, ycol):
-    return [row[ycol] for row in data]
-
-def predict(loss_func, y_true):
-    mode = lambda x: max(set(x), key=x.count)
-    func = {Loss.gini: mode, Loss.var: scipy.mean}
-    return func[loss_func](y_true)
-
-class Decision:
-    """A Decision Node asks a question. The question results in a true branch
-    and a false branch in response to the question."""
-
-    def __init__(self, question, data, left, right, idx, score, gain, settings):
-        self.ycol = settings.y
-        self.question = question
-        self.data = data
-        self.true_branch = left
-        self.false_branch = right
-        self.index = idx
-        self.n = len(data)
-        self.score = score
-        self.gain = gain
-        self.tree = settings.tree_idx
-
-##################################Build Tree#################################
-import gc
-
-class BinarySearch:
-    """Method class for tree construction. Performs binary search.
-    Binary refers to how the features are seperated using Questions.
-    """
-    def gen_breakpts(data, colnum):
-        """Find all the candidate values for splitting the data on a
-        given feature into groups. Return k-1 candidates for string variables.
-        """
-        unique = unique_vals(data, colnum)
-        if any([type(elm) == str for elm in unique]):
-            results = unique[1:]
-        elif all([is_numeric(elm) for elm in unique]):
-            cuts = range(0, len(unique), 2)
-            pair = lambda x: [x[i:i + 2] for i in cuts if len(x[i:i + 2]) == 2]
-            pairs = pair(unique)
-            results = [mean(group) for group in pairs]
-        return results
-
-    def decide(parent_idx, child_idx):
-        """Find the direction of the split that took place based on the index
-        value of the child. Indexes are integers"""
-        if child_idx == 2 * parent_idx:
-            decision = 'Yes'
-        elif child_idx == 2 * parent_idx + 1:
-            decision = 'No'
-        return decision
-
-    def gen_branch(idx, ancestors=None):
-        """Recursive function to find the ancestors of a particular node
-        ancestors = None is necessary to keep the recursive function from
-        storing ancestors between function calls which resuts in duplicates
-        """
-        if ancestors == None:
-            ancestors = []
-        parent = math.floor(idx/2)
-        if parent == 0:
-            ancestors.append(idx)
-            return sorted(ancestors)
-        ancestors.append(idx) #Due to recursion its idx and not parent
-        return BinarySearch.gen_branch(parent, ancestors)
-
-    def get_answers(branch):
-        """Record all of the answers to questions that occur on a branch.
-        Yes -> 2k, No -> 2k+1 where k is the preceding node
-        """
-        func = BinarySearch.decide
-        parent_child = [branch[i_: i_ + 2] for i_ in range(len(branch))][:-1]
-        return [func(pair[0], pair[1]) for pair in parent_child]
-
-    def attach_nodes(tree_idx):
-        """add Leaf and Decision objects to the tree"""
-        treenodes = {}
-        for obj in gc.get_objects():
-            if isinstance(obj, (Leaf, Decision)) and obj.tree == tree_idx:
-                treenodes[obj.index] = obj
-        return sortdict(treenodes, sortbykeys=True, descending=False)
-
-    def assign_objects(objtype, nodes):
-        """Function to create the leaf and decision list of indexes"""
-        return [idx for idx, x in nodes.items() if isinstance(x, objtype)]
-
-    def find_missed(nodes):
-        """Find the nodes that are not stored in the object class dictionaries
-        yet should exist on the tree. The branch leading to the existing node
-        are all of the nodes that should exist on the tree"""
-        maxnode = max(nodes.keys())
-        search = [idx for idx in range(1, maxnode) if idx not in nodes.keys()]
-        missing = {}
-        for key in nodes.keys():
-            branch = BinarySearch.gen_branch(key)
-            for idx in branch:
-                if idx in search:
-                    parent = math.floor(idx/2)
-                    conclusion = BinarySearch.decide(parent, idx)
-                    if conclusion == 'Yes':
-                        missing[idx] = nodes[parent].true_branch
-                    elif conclusion == 'No':
-                        missing[idx] = nodes[parent].false_branch
-        return missing
-
-    def bestsplit(settings, data, ycol, idx):
-        """Find the best question to ask by iterating over every feature
-        and calculating the information gain.
-        """
-        score = Score(settings).node_score(data, ycol)
-        gain = settings.min_gain # keep track of the best info gain
-        question = None # keep track of the value that produced it
-
-        #feature subset applies to Random Forest
-        features = random.sample(settings.xcols, settings.n_features)
-        features.sort()
-
-        for fcol in features:
-            breakpts = BinarySearch.gen_breakpts(data, fcol)
-            if len(breakpts) == 0:
-                continue
-            for val in breakpts:
-                split = Split(fcol, val, ycol, idx, data, settings)
-                if not split.enough:
-                    continue
-                if split.info_gain > gain:
-                    gain, question = split.info_gain, split.question
-
-        return gain, question, score
-
-    def build_tree(settings, data, ycol, idx=1):
-        """Builds the tree.
-        Base case: no further info gain. Since we can ask no further questions,
-        we'll return a leaf.
-        Otherwise: Continue recursively down both branches. Return a Decision
-        node. The Decision node records the question and both branches.
-        """
-        gain, question, score = BinarySearch.bestsplit(settings, data, ycol, idx)
-        if question == None:
-            leaf = Leaf(ycol, idx, score, gain, data, settings)
-            return leaf
-
-        args = (question.col_num, question.value)
-        split = Split(*args, ycol, idx, data, settings)
-
-        lft_idx, rgt_idx = split.child_true, split.child_false
-        true_rows, false_rows = split.true_rows, split.false_rows
-        left = BinarySearch.build_tree(settings, true_rows, ycol, lft_idx)
-        right = BinarySearch.build_tree(settings, false_rows, ycol, rgt_idx)
-
-        args = (question, data, left, right, idx, score, gain, settings)
-        return Decision(*args)
-
-    def calc_height(nodes):
-        """Size of a binary tree of height, h is 2^h - 1
-        Height = log2(n+1) where n is the max node"""
-        idx = max(nodes, default=1)
-        h = round(math.log2(idx + 1))
-        return h
-
-class Tree:
-    """Decision Tree class.  Classification Trees and Regression Trees
-    depend on the loss function type."""
-    counter = 0
-
-    def __init__(self, data, ycol, header, lossfunc,
-                 min_gain=0, min_rows=1, forest=False, n_features=1):
-        Tree.counter += 1
-
-        args = (data, ycol, header, lossfunc, min_gain, min_rows)
-        self.configs = Settings(*args, forest, n_features)
-
-        self.model = BinarySearch.build_tree(self.configs, data, ycol)
-        self.nodes = BinarySearch.attach_nodes(self.configs.tree_idx)
-        self.height = BinarySearch.calc_height(self.nodes)
-        self.leaves = BinarySearch.assign_objects(Leaf, self.nodes)
-        self.decisions = BinarySearch.assign_objects(Decision, self.nodes)
-
-    def __call__(self, index=1):
-        return self.nodes[index]
-
-    def __str__(self):
-        attr = "{}".format([x for x in dir(self) if "__" not in x])
-        return "Tree Class attributes\n {}".format(wrap(attr))
-
-class Split:
-    """Split rows at a specific value of a feature"""
-
-    def __init__(self, col, value, ycol, idx, data, settings):
-        self.question = Question(col, value, settings.header)
-        self.true_rows, self.false_rows = self.partition(data, self.question)
-        self.child_true, self.child_false = self.child_idxs(idx)
-        self.size = self.calc_size(self.true_rows, self.false_rows)
-
-        args = (self.true_rows, self.false_rows)
-        self.info_gain = self.calc_gain(*args, data, ycol, settings)
-        self.enough = self.valid(settings)
-
-    def child_idxs(self, idx):
-        """True answers to the question result in 2*x False answers to the
-        question result in 2*x+1"""
-        return 2*idx, 2*idx + 1 #Left child, Right child
-
-    def partition(self, rows, question):
-        """Partition dataset by answer to the class: question into
-        true rows and false rows"""
-        true_rows, false_rows = [], []
-        for row in rows:
-            if question.match(row):
-                true_rows.append(row)
+def flatten(nested_list):
+    """Flattens a nested list into a single list"""
+    def flatten_generator(nested_list):
+        for i in nested_list:
+            if isinstance(i, (list, tuple)):
+                for j in flatten_generator(i):
+                    yield j
             else:
-                false_rows.append(row)
-        return true_rows, false_rows
+                yield i
+    return list(flatten_generator(nested_list))
 
-    def calc_size(self, true_rows, false_rows):
-        nleft = len(self.true_rows)
-        nright = len(self.false_rows)
-        return min(nleft, nright)
 
-    def calc_gain(self, left, right, data, ycol, settings):
-        """Determine the information gained from the split"""
-        redux = Score(settings).wgtd_score(left, right, ycol)
-        score = Score(settings).node_score(data, ycol)
-        weight = len(data)/settings.N
-        return weight * (score - redux)
+def neat_string(matrix, sigdigits=3):
+    """Neat representation of data"""
+    cap = lambda x: round(x, sigdigits) if isinstance(x, float) else x
+    digit = [[cap(x) for x in row] for row in matrix]
+    strng = [[str(e) for e in row] for row in digit]
+    lens = [max(map(len, col)) for col in zip(*strng)]
+    fmt = '\t'.join('{{:{}}}'.format(x) for x in lens)
+    table = [fmt.format(*row) for row in strng]
+    return '\n'.join(table)
 
-    def valid(self, settings):
-        """Determine if the split is valid based on the input settings"""
-        big_enough = self.size >= settings.min_rows
-        enough_gain = self.info_gain >= settings.min_gain
-        validsplit = all([big_enough, enough_gain])
-        return validsplit
 
-class Score:
-    """Calculation methods for assessing impurity of the response column"""
-    def __init__(self, settings):
-        self.node_score = self.getfunc(settings)
+# #####################Settings###############################
+class Loss:
+    """Controls the types of Decision Trees generated based on the dataset.
+    Data with a categorical response will utilize the gini loss function and
+    produce Classification Trees. Data with a numerical response will
+    utilize the variance loss function and produce Regression Trees."""
 
-    def getfunc(self, settings):
-        """The function used to calculate impurity of a node"""
-        func = {Loss.gini: self.gini, Loss.var: self.var}
-        return func[settings.loss_func]
+    def __init__(self, modeldf):
+        self.name = None
+        self.func = None
+        self.predict = None
+        self.ycol = modeldf.ycol
+        self.set_lossfunc(modeldf(modeldf.ycol))
 
-    def gini(self, data, resp_col):
+    def mode(self, x):
+        """Custom mode function"""
+        if len(x) > 0:
+            return max(set(x), key=x.count)
+        return ''
+
+    def set_lossfunc(self, ydata):
+        """Sets the method for making predictions and calculating impurity"""
+        if any([isinstance(item, str) for item in ydata]):
+            self.name = 'gini'
+            self.func = self.gini
+            self.predict = self.mode
+            return
+        if all([isinstance(item, numbers.Number) for item in ydata]):
+            self.name = 'var'
+            self.func = self.var
+            self.predict = scipy.mean
+            return
+
+    def class_counts(self, data):
+        """Counts the number of each category."""
+        counts = {}
+        for row in data:
+            label = row[self.ycol]
+            if label not in counts:
+                counts[label] = 0
+            counts[label] += 1
+        return counts
+
+    def gini(self, data):
         """Calculate the Gini Impurity for a list of rows"""
-        counts = class_counts(data, resp_col)
+        counts = self.class_counts(data)
         impurity = 1
         for lbl in counts:
             prob_of_lbl = counts[lbl] / len(data)
             impurity -= prob_of_lbl**2
         return impurity
 
-    def var(self, data, resp_col):
-        y_stat = [row[resp_col] for row in data]
-        if len(y_stat) > 1:
-            return statistics.variance(y_stat)
-        else:
-            return 0
+    def var(self, data):
+        """Calculate variance of the response column"""
+        response = [row[self.ycol] for row in data]
+        if len(response) > 1:
+            return statistics.variance(response)
+        return 0
 
-    def wgtd_score(self, left, right, ycol):
+
+class TreeParams:
+    """Hyperparameters for controlling growth of trees and forest.
+    Tree Settings
+    Mingain--sets the minimum information gain that must occur for splitting.
+    Minrows--sets the minimum number of rows that must be in a Leaf Node.
+    Maxhgt--sets the maximum height for a tree"""
+    def __init__(self, mingain, minrows, maxheight):
+        self.mingain = mingain
+        self.minrows = minrows
+        self.maxheight = maxheight
+
+    def gain_enough(self, split):
+        """Determine if the split has gained sufficient information"""
+        return split.info_gain >= self.mingain
+
+    def big_enough(self, split):
+        """Determines if the split has sufficient size"""
+        sizes = map(len, [split.true_rows, split.false_rows])
+        size = min(sizes, default=0)
+        return size >= self.minrows
+
+    def short_enough(self, split):
+        """Determine if the split exceeds the height preset for the tree"""
+        height = round(math.log2(split.index + 1))
+        return height < self.maxheight
+
+    def isvalid(self, split):
+        """Determine if the split should be allowed given the settings"""
+        enough = [self.gain_enough(split), self.big_enough(split),
+                  self.short_enough(split)]
+        return all(enough)
+
+
+class Settings:
+    """Nfeatures--controls number of features selected on Tree in Forest
+    Ntrees--the number of trees in the forest
+    """
+    def __init__(self, modeldf, tparams, ntrees=1, nfeatures=2):
+        self.modeldf = modeldf
+        self.tparams = tparams
+        self.ntrees = ntrees
+        self.nfeatures = self.set_nfeatures(ntrees, nfeatures)
+        self.questions = {}
+        self.loss = Loss(modeldf)
+
+    def set_nfeatures(self, ntrees, nfeatures):
+        """Sampling a subset of the features only applies to Forests. Trees
+        always utilize all the features for determining a best split"""
+        if ntrees > 1:
+            return nfeatures
+        return self.modeldf.xdf.numcols
+
+    def feature_sample(self, featurecols):
+        """Random features sample for determining best split in Forest"""
+        return random.sample(featurecols, self.nfeatures)
+
+
+# #######################Tree Parts########################
+class Question:
+    """Question is used to partition a dataset into true and false answers"""
+    def __init__(self, col_num, value, header):
+        self.header = header
+        self.col_num = col_num
+        self.value = value
+        self.col_name = header[col_num]
+        self.numeric = isinstance(value, numbers.Number)
+
+    def match(self, row):
+        """Compare the feature value in a row to the
+        feature value in question."""
+        val = row[self.col_num]
+        if self.numeric:
+            return val >= self.value
+        return val == self.value
+
+    def __repr__(self):
+        condition = "=="
+        val = self.value
+        if self.numeric:
+            val = round(self.value, 3)
+            condition = ">="
+        str_val = str(val)
+        return "Is {} {} {}?".format(self.col_name, condition, str_val)
+
+
+class Node:
+    """Generic object attached to a binary search tree. Object converts into
+    a Leaf or Decision depending on the best split possible."""
+    def __init__(self, data, settings, idx):
+        self.index = idx
+        self.data = data
+        self.score = settings.loss.func(data)
+        self.gain = None
+        self.question = None
+        self.settings = settings
+        self.bestsplit(data)
+
+    def bestsplit(self, data):
+        """Find the best question to ask by iterating over every feature
+        and calculating the information gain."""
+        features = self.settings.feature_sample(self.settings.modeldf.xcols)
+        header = self.settings.modeldf.header
+        col_qns = [Column(data, fcol, header).questions for fcol in features]
+        questions = flatten(col_qns)  # unpack sublists for each column
+        self.question, self.gain = None, 0  # default values
+        isgood = lambda x: all([x.valid, x.info_gain > self.gain])
+        for question in questions:
+            split = Split(self, question)
+            if isgood(split):
+                self.question, self.gain = question, split.info_gain
+
+
+class Leaf:
+    """A Leaf node predicts the response based on the data. It predicts
+    mode in the case of Classification Tree and mean in the case of
+    Regression Tree"""
+    def __init__(self, node):
+        [setattr(self, attr, val) for attr, val in node.__dict__.items()]
+        self.branch = self.path(node.index)
+        self.ytrue = [row[node.settings.modeldf.ycol] for row in node.data]
+        self.prediction = self.get_prediction(node)
+        self.treeid = Tree.counter
+        self.numrows = len(node.data)
+        self.type = type(self).__name__
+        self.features = self.indicators(node)
+
+    def get_prediction(self, node):
+        pred_func = node.settings.loss.predict
+        return pred_func(self.ytrue)
+
+    def path(self, idx, ancestors=None):
+        """Recursive function to find the ancestors of a particular node
+        ancestors = None is necessary to keep the recursive function from
+        storing ancestors between function calls which resuts in duplicates
+        """
+        if ancestors is None:
+            ancestors = []
+        parent = math.floor(idx/2)
+        if parent == 0:
+            ancestors.append(idx)
+            return sorted(ancestors)
+        ancestors.append(idx)  # Due to recursion its idx and not parent
+        return self.path(parent, ancestors)
+
+    def indicators(self, node):
+        """Recall the features used to develop the leaf"""
+        leafpath = self.path(node.index)[:-1]  # ancestor nodes
+        qdict = node.settings.questions
+        fcols = [qdict[k].col_num for k in leafpath if k in qdict]  # features
+        numfeatures = node.settings.modeldf.numcols
+        return [1 if x in fcols else 0 for x in range(numfeatures)]
+
+
+class Decision:
+    """A Decision Node asks a question. The question results in a true branch
+    and a false branch in response to the question."""
+    def __init__(self, left, right, node):
+        [setattr(self, attr, val) for attr, val in node.__dict__.items()]
+        self.true_branch = left
+        self.false_branch = right
+        self.treeid = Tree.counter
+        self.numrows = len(node.data)
+        self.type = type(self).__name__
+
+
+class Split:
+    """Split rows at a specific value of a feature"""
+    def __init__(self, node, question):
+        self.index = node.index  # required for Tree search settings
+        self.question = question
+        self.weight = len(node.data)/node.settings.modeldf.numrows
+        self.true_rows, self.false_rows = self.partition(node, question)
+        self.wgtd_score = self.calc(self.true_rows, self.false_rows, node)
+        self.info_gain = self.weight*(node.score - self.wgtd_score)
+        self.valid = node.settings.tparams.isvalid(self)
+
+    def partition(self, node, question):
+        """Partition dataset by answer to the class: question into
+        true rows and false rows"""
+        true_rows = [row for row in node.data if question.match(row)]
+        false_rows = [row for row in node.data if not question.match(row)]
+        return true_rows, false_rows
+
+    def calc(self, left, right, node):
         """Weighted impurity based on size of the child nodes"""
-        prop = len(left) / (len(left) + len(right))
-        impurity_left = self.node_score(left, ycol)
-        impurity_right = self.node_score(right, ycol)
-        return prop * impurity_left + (1 - prop) * impurity_right
+        prop_left = len(left) / (len(left) + len(right))
+        impurity_left = node.settings.loss.func(left)
+        impurity_right = node.settings.loss.func(right)
+        return prop_left * impurity_left + (1 - prop_left) * impurity_right
 
-########################Diagnostics########################
+
+class Column:
+    """Data class for a feature column to store all the attributes used from
+    a column in building a binary search tree"""
+    def __init__(self, rows, colidx, header):
+        self.data = [row[colidx] for row in rows]
+        self.uniques = self.find_unique(rows, colidx)
+        self.numeric = self.is_numeric(self.uniques)
+        self.categorical = any([type(elm) == str for elm in self.uniques])
+        self.breakpts = self.gen_breakpts()
+        self.questions = [Question(colidx, pt, header) for pt in self.breakpts]
+
+    def is_numeric(self, coldata):
+        """Test if column values are numeric"""
+        return all([isinstance(value, numbers.Number) for value in coldata])
+
+    def find_unique(self, rows, colidx):
+        """Find the unique values for a column in a dataset."""
+        vals = set([row[colidx] for row in rows])
+        return sorted(list(vals))
+
+    def gen_breakpts(self):
+        """Find all the candidate values for splitting the data on a
+        given feature into groups. Return k-1 candidates for string variables.
+        """
+        if self.categorical:
+            return self.uniques[1:]
+        cuts = range(0, len(self.uniques), 2)
+        pairs = [self.uniques[i:i + 2] for i in cuts]
+        return [scipy.mean(group) for group in pairs]
+
+    def get_questionlist(self, col, header):
+        """All questions for the column object"""
+        return [Question(col, pt, header) for pt in self.breakpts]
+
+
+# #######################Diagnostics########################
 class Diagnostics:
-    """Method class for calculating reports on the Tree or Forest objects"""
-    def make_leafmatrix(obj, settings):
-        """Identifies the features used for making predictions on a leaf.
-        Function returns an indicator vector for all of the features"""
-        header = flatten(["Tree", "Leaf", "Rows", "Score", settings.xnames])
-        matrix = []
+    """Generates reports on Decision Tree object for training data frame"""
+    def __init__(self, nodes, featnames):
+        leafnodes = [node for node in nodes if isinstance(node, Leaf)]
+        decisions = [node for node in nodes if isinstance(node, Decision)]
+        self.leafclusters = self.get_clusters(leafnodes, featnames)
+        self.nodesummary = self.summarize(nodes)
+        self.featureimportance = self.scorefeatures(decisions, featnames)
+        self.leafmatrix = self.get_matrix(leafnodes, featnames)
 
-        for treeidx in range(settings.n_trees):
-            nodes = Diagnostics.getnodes(obj, treeidx)
-            for idx, node in nodes.items():
-                if isinstance(node, Leaf):
-                    feature_row = [0 for i in settings.header]
-                    path = BinarySearch.gen_branch(idx)[:-1]
-                    for idx in path:
-                        if idx in nodes.keys():
-                            feature_row[nodes[idx].question.col_num] = 1
-                    feature_row.pop(settings.y)
-                    row = [treeidx, node.index, node.n, node.score, feature_row]
-                    matrix.append(flatten(row))
+    def getattributes(self, nodes, attributes):
+        """Extract the attributes of each node into a list with a default
+        value for missing values"""
+        get = lambda node, attrbs: [getattr(node, x, None) for x in attrbs]
+        return [flatten(get(node, attributes)) for node in nodes]
 
-        return ListDF(matrix, header)
+    def get_matrix(self, nodes, featnames):
+        """Shows all the features used to make each leaf and the amount of data
+        used by the leaf"""
+        attributes = ['treeid', 'index', 'prediction', 'numrows', 'features']
+        data = self.getattributes(nodes, attributes)
+        header = ['treeid', 'index',  'prediction', 'numrows'] + featnames
+        return ListDF(data, [x.title() for x in header])
 
-    def mark_leafclusters(obj, settings):
-        """Add Leaf column to the training data"""
-        header = flatten(["Tree", "Leaf_idx", settings.header])
-        marked_data = []
-        for treeidx in range(settings.n_trees):
-            nodes = Diagnostics.getnodes(obj, treeidx)
-            for idx, node in nodes.items():
-                if isinstance(node, Leaf):
-                    for row in node.data:
-                        labeled_row = flatten([treeidx, idx, row])
-                        marked_data.append(labeled_row)
+    def get_clusters(self, nodes, featnames):
+        """Custom function to generate data clusters associated with leaves"""
+        cluster = lambda leaf, row: flatten([leaf.treeid, leaf.index, row])
+        data = [cluster(leaf, row) for leaf in nodes for row in leaf.data]
+        header = ['treeid', 'index'] + featnames
+        return ListDF(data, [x.title() for x in header])
 
-        return ListDF(marked_data, header)
+    def summarize(self, nodes):
+        """Summarize all of the data contained in each node"""
+        attributes = ['treeid', 'index', 'type', 'question', 'prediction']
+        attributes = attributes + ['numrows', 'score', 'gain']
+        data = self.getattributes(nodes, attributes)
+        df = ListDF(data, [x.title() for x in attributes])
+        df.transform_col(str, 'Index')
+        return df
 
-    def tally_gain(nodes, importance):
-        """Total the information gained on each feature in Tree.nodes"""
-        for idx, node in nodes.items():
-            if isinstance(node, Decision):
-                feature = node.question.col_name
-                importance[feature] += node.gain
-        return importance
+    def tallygain(self, nodes, featnames):
+        """Sum the information gained from every decision node"""
+        gain = {x: 0 for x in featnames}
+        for node in nodes:
+            feature = node.question.col_name
+            gain[feature] += node.gain
+        sortedkeys = sorted(gain, key=gain.get, reverse=True)
+        return {key: gain[key] for key in sortedkeys}
 
-    def score_features(obj, settings, standardize=True):
-        """Find the feature importance in the tree. In a Tree importance is
-        the total information gain. In a Forest importance is the average
-        information gain across all Trees.
-        """
-        importance = {x:0 for x in settings.header}
-        for treeidx in range(settings.n_trees):
-            nodes = Diagnostics.getnodes(obj, treeidx)
-            importance = Diagnostics.tally_gain(nodes, importance)
-        importance = {k:v/settings.n_trees for k, v in importance.items()}
-
-        scores = {}
-        for key, val in importance.items():
-            if val > 0:
-                scores[key] = val
-
+    def scorefeatures(self, nodes, featnames, standardize=True):
+        """Determine how much each feature contributes to the model"""
+        gain = self.tallygain(nodes, featnames)
         if standardize:
-            vals = sorted(scores.values(), reverse=True)
-            key = lambda x: get_key(x, scores)
-            percents = {key(v):v/sum(vals) for v in vals}
-            return percents
+            total = sum([value for value in gain.values()])
+            if total > 0:
+                gain = {k: gain[k]/total for k in gain}
+        return gain
 
-        return scores
 
-    def make_nodesummary(obj, settings):
-        """Summary of the nodes in the tree"""
-        header = ["Tree", "Index", "Type", "Question", "Rows", "Score", "Gain"]
-        data = []
-        for treeidx in range(settings.n_trees):
-            nodes = Diagnostics.getnodes(obj, treeidx)
-            for idx, node in nodes.items():
-                if isinstance(node, Leaf):
-                    half_1st = [treeidx, node.index, "Leaf", ""]
-                    half_2nd = [node.n, node.score, node.gain]
-                    data.append(flatten(half_1st + half_2nd))
-                if isinstance(node, Decision):
-                    third_1st = [treeidx, node.index, "Decision"]
-                    third_2nd = [str(node.question), node.n, node.score]
-                    third_3rd = [node.gain]
-                    data.append(flatten(third_1st + third_2nd + third_3rd))
-
-        summaryDF = ListDF(data, header)
-        summaryDF.sort_col(colname="Index")
-        return summaryDF
-
-    def classify(row, node):
-        """Recursive function for returning Leaf node.
-        Base case: reach a Leaf node
-        Recursion: traverse Decision Nodes along branches until Base Case
-        """
-        if isinstance(node, Leaf):
-            return node
-        if node.question.match(row):
-            return Diagnostics.classify(row, node.true_branch)
-        else:
-            return Diagnostics.classify(row, node.false_branch)
-
-    def getmodel(obj, treeidx=0):
-        """The model allows for recursive searching i.e. the application of
-        the classify function"""
-        if isinstance(obj, Forest):
-            return obj.trees[treeidx]['tree'].model
-        if isinstance(obj, Tree):
-            return obj.model
-
-    def getfunc(obj):
-        """The function used to aggregate predictions in a forest"""
-        mode = lambda x: max(set(x), key=x.count)
-        func = {Loss.gini: mode, Loss.var: scipy.mean}
-        return func[obj.configs.loss_func]
-
-    def getnodes(obj, treeidx=0):
-        if obj.configs.forest:
-            return obj.trees[treeidx]['tree'].nodes
-        if isinstance(obj, Tree):
-            return obj.nodes
-
-    def genleaves(obj, testdata, settings):
-        """Generate the model estimates on each row of test data"""
-        leaf_nodes = []
-        for row in testdata:
-            noderow = []
-            for treeidx in range(settings.n_trees):
-                model = Diagnostics.getmodel(obj, treeidx)
-                noderow.append(Diagnostics.classify(row, model))
-            leaf_nodes.append(noderow)
-        return leaf_nodes
-
-    def makepredictions(leafnodes, func):
-        """Use the function to compile the prediction on each leafnode.
-        For a Forest there are multiple nodes in each row of leafnodes.
-        For a Tree there is one node in each row of leafnodes."""
-        predictions = []
-        for row in leafnodes:
-            prediction = func([node.prediction for node in row])
-            predictions.append(prediction)
-        return predictions
-
-    def getleaf_idx(leafnodes):
-        """Finds the index used to make a prediction on a row of data"""
-        leaf_pos = []
-        for row in leafnodes:
-            idx = [node.index for node in row]
-            if len(idx) == 0:
-                idx = idx[0]
-            leaf_pos.append(idx)
-        return leaf_pos
-
-    def Xmatrix(obj, data):
-        feat_matrix = [[row[x] for x in obj.configs.xcols] for row in data]
-        return ListDF(feat_matrix, obj.configs.xnames)
-
-    def make_pred_df(obj, testdata, leaves, yhat, ytrue, intervals):
-        pheader = ["Leaf", "y_hat", obj.configs.yname, "Interval"]
-        xDF = Diagnostics.Xmatrix(obj, testdata)
-        pdata = [leaves, yhat, ytrue, intervals]
-        pDF = ListDF(pdata, pheader)
-        pDF.paste(xDF.data, xDF.header)
-        return pDF
-
+# ########################Predict##################################
 class GOF:
     """Method class to contain goodness of fit calculation measures"""
-    def mse(ytrue, yhat, loss_func):
-        mse = None
-        if loss_func == Loss.var:
-            mse = mean_squared_error(ytrue, yhat)
-        return mse
+    def __init__(self, ytrue, yhat, leafnodes, settings, conf):
+        self.error = self.calc_error(settings.loss, ytrue, yhat)
+        self.predictors = len(settings.modeldf.xcols)
+        self.intervals = None
+        self.rsq = None
+        self.adjrsq = None
+        self.regression_gof(settings, ytrue, yhat, leafnodes, conf)
 
-    def rsq(ytrue, yhat, loss_func):
-        rsq = None
-        if loss_func == Loss.var:
-            rsq = r2_score(ytrue, yhat)
-        return rsq
+    def calc_error(self, loss, ytrue, yhat):
+        """Error is measured as match accuracy for gini and mean square error
+        for variance"""
+        if loss.name == 'gini':
+            accuracy = [y == yhat[i] for i, y in enumerate(ytrue)]
+            return accuracy.count(False)/len(ytrue)
+        return mean_squared_error(ytrue, yhat)
 
-    def adjrsq(ytrue, yhat, n_, p_, loss_func):
-        adjrsq = None
-        if loss_func == Loss.var:
-            rsq = r2_score(ytrue, yhat)
-            adjrsq = 1 - (1 - rsq)*(n_ - 1)/(n_ - p_ - 1)
-        return adjrsq
+    def regression_gof(self, settings, ytrue, yhat, leafnodes, conf):
+        if settings.loss.name == 'var':
+            self.intervals = self.calc_intervals(leafnodes, conf)
+            self.rsq = r2_score(ytrue, yhat)
+            self.adjrsq = self.calc_adjrsq(len(ytrue), self.predictors)
 
-    def calc_conf_int(y_list, conf):
+    def conf_int(self, ylist, conf):
         """For the variance loss function, return the mean of the y feature
         and a confidence interval around the mean."""
-        mu, se = scipy.mean(y_list), 0
-        if len(y_list) > 1:
-            se = scipy.stats.sem(y_list)
-        if se == 0:
-            return 0, 0
+        mu = scipy.mean(ylist)
+        sd = self.calc_stddev(ylist)
+        if sd > 0:
+            return scipy.stats.norm.interval(conf, mu, sd)
+        return mu, mu
 
-        low, high = scipy.stats.norm.interval(conf, mu, se)
-        return low, high
+    def calc_stddev(self, ylist):
+        """Scipy throws an error if the list does not have more than one
+        observation"""
+        if len(ylist) > 1:
+            return scipy.stats.sem(ylist)
+        return 0
 
-    def conf_int(leafnodes, loss_func, conf):
-        """Confidence interval varies based on the actual response values
-        of the leaf node(Tree) or leaf nodes(Forest)"""
-        if loss_func == Loss.var:
-            intervals = []
-            for row in leafnodes:
-                yrow = flatten([node.ytrue for node in row])
-                interval = GOF.calc_conf_int(yrow, conf)
-                intervals.append(interval)
-            return intervals
-        if loss_func == Loss.gini:
-            return [[None, None] for row in leafnodes]
+    def calc_intervals(self, leafnodes, conf):
+        """Calculate the confidence intervals on each leaf or set of leaves
+        in the case of Forest"""
+        # flatten to collapse forest nodes into one list
+        ygroups = [flatten([node.ytrue for node in row]) for row in leafnodes]
+        return [self.conf_int(y, conf) for y in ygroups]
 
-    def err(intervals, ytrue, yhat, loss_func):
-        """RegressionTree: Determine when intervals contains ytrue
-        ClassificationTree: Determine when yhat = ytrue
-        """
-        if loss_func == Loss.var:
-#            btwn = lambda x, pair: pair[0] <= x <= pair[1]
-#            accuracy = [btwn(ytrue[i], pair) for i, pair in enumerate(intervals)]
-#            return accuracy.count(False)/len(ytrue)
-            return mean_squared_error(ytrue, yhat)
-        if loss_func == Loss.gini:
-            accuracy = [ytrue[i] == yhat[i] for i in range(len(ytrue))]
-            return accuracy.count(False)/len(ytrue)
+    def calc_adjrsq(self, numrows, predictors):
+        """Proportion of variation in the dependent variable explained by
+        the independent variables"""
+        denominator = numrows - predictors - 1
+        numerator = (1 - self.rsq) * (numrows - 1)
+        if denominator > 0:
+            ratio = numerator/denominator
+            return 1 - ratio
 
-class Summary:
-    """Diagnostic reports of the binary search object"""
-    def __init__(self, obj):
+class Fit:
+    """Store attributes related to goodness of fit and prediction results"""
+    def __init__(self, obj, data):
+        self.leafnodes = self.get_leafnodes(obj, data)
+        self.yhat = self.calc_yhat(obj, data)
+        self.ytrue = self.get_ytrue(obj, data)
+        xcols = obj.configs.modeldf.xcols
+        self.xmatrix = [[row[i] for i in xcols] for row in data]
+        self.xnames = [obj.configs.modeldf.header[i] for i in xcols]
+        self.settings = obj.configs
+
+    def get_leafnodes(self, obj, data):
+        if isinstance(obj, Tree):
+            trees = {0: obj}.values()
+        elif isinstance(obj, Forest):
+            trees = obj.trees.values()
+        return [[tree.classify(row) for tree in trees] for row in data]
+
+    def get_ytrue(self, obj, data):
+        """Extract response variable from data"""
         settings = obj.configs
-        self.obj = obj
-        self.leafmatrix = Diagnostics.make_leafmatrix(obj, settings)
-        self.leafclusters = Diagnostics.mark_leafclusters(obj, settings)
-        self.featureimportance = Diagnostics.score_features(obj, settings)
-        self.nodesummary = Diagnostics.make_nodesummary(obj, settings)
+        ycolnum = settings.modeldf.ycol
+        return [row[ycolnum] for row in data]
 
-    def traverse_to(self, treeidx=0, nodeidx=1):
-        """Given a node in the tree recreate the decisions that
-        occur to reach the node. """
-        tree = self.obj
-        if self.obj.configs.forest:
-            tree = self.obj.trees[treeidx]['tree']
+    def calc_yhat(self, obj, data):
+        """Calculate the predictions for each row"""
+        leafnodes = self.get_leafnodes(obj, data)
+        settings = obj.configs
+        calcs = [[node.prediction for node in row] for row in leafnodes]
+        return [settings.loss.predict(row) for row in calcs]
 
-        branch = BinarySearch.gen_branch(nodeidx)
-        answers = BinarySearch.get_answers(branch)
-        path = [pair for pair in zip(branch, answers)]
 
-        print("Traversing the tree to node {}...".format(nodeidx))
-        for pair in path:
-            idx, answer = pair[0], pair[1]
-            score = round(tree(idx).score, tree.configs.sigdigits)
-            print("Node({}) Rows {} Score {}".format(idx, tree(idx).n, score))
-            if isinstance(tree(idx), Decision):
-                print("\t{} {}".format(tree(idx).question, answer))
-            elif isinstance(tree(idx), Leaf):
-                prediction = tree(idx).prediction
-                print("\tLeaf Node Prediction {}\n".format(prediction))
-
-    def print_tree(self, Tree, spacing=""):
-        """print_tree(my_tree.model)"""
-        if isinstance(Tree.model, Leaf):
-            print(spacing + "Predict", Tree.model.prediction)
-            return
-
-        print(spacing + str(Tree.model.question))
-        print(spacing + '--> True:')
-        self.print_tree(Tree.model.true_branch, spacing + "  ")
-        print(spacing + '--> False:')
-        self.print_tree(Tree.model.false_branch, spacing + "  ")
-
-#########################Predict##################################
 class Predict:
     """Generates predictions from Decision Tree or Random Forest object"""
-    def __init__(self, obj, testdata, conf=0.95):
-        settings = obj.configs
-        self.n = len(testdata)
-        self.loss_func = obj.configs.loss_func
-        self.numpredictors = len(Diagnostics.score_features(obj, settings))
-        self.leafnodes = Diagnostics.genleaves(obj, testdata, settings)
-        self.leaves = Diagnostics.getleaf_idx(self.leafnodes)
-        self.predictmethod = Diagnostics.getfunc(obj)
-        args = (self.leafnodes, self.predictmethod)
-        self.yhat = Diagnostics.makepredictions(*args)
-        self.ytrue = [row[obj.configs.y] for row in testdata]
-        self.conf_intervals = GOF.conf_int(self.leafnodes, self.loss_func, conf)
-        args = (self.conf_intervals, self.ytrue, self.yhat, self.loss_func)
-        self.error = GOF.err(*args)
-        self.rsq = GOF.rsq(self.ytrue, self.yhat, self.loss_func)
-        args = (self.ytrue, self.yhat, self.n, self.numpredictors)
-        self.adj_rsq = GOF.adjrsq(*args, self.loss_func)
-        self.mse = GOF.mse(self.ytrue, self.yhat, self.loss_func)
-        self.msg = self.display_gof(settings)
-        args = (obj, testdata, self.leaves, self.yhat, self.ytrue)
-        self.df = Diagnostics.make_pred_df(*args, self.conf_intervals)
+    def __init__(self, obj, conf):
+        train = obj.configs.modeldf.train
+        test = obj.configs.modeldf.test
+        self.training = self.gen_predictions(obj, train, conf)
+        self.testing = self.gen_predictions(obj, test, conf)
+        self.fitsummary = self.get_summary(obj, conf, train, test)
 
-    def display_gof(self, settings):
-        """Displays the error and goodness of fit attributes """
-        msg_basic = "Testing on {} rows\n".format(self.n)
+    def gen_predictions(self, obj, data, conf):
+        """Make dataframe of prediction results"""
+        fit = Fit(obj, data)
+        pred_data = [flatten(x) for x in zip(fit.yhat, fit.ytrue, fit.xmatrix)]
+        gof = GOF(fit.ytrue, fit.yhat, fit.leafnodes, fit.settings, conf)
+        header = flatten(['yhat', 'ytrue', fit.xnames])
+        if gof.intervals is not None:
+            [x.insert(1, gof.intervals[i]) for i, x in enumerate(pred_data)]
+            header.insert(1, 'Intervals')
+        return ListDF(pred_data, header)
 
-        if settings.loss_func == Loss.var:
-            txt = "RSq {0[0]:.0%} AdjRSq {0[1]:.0%} MSE {0[2]:.2f}\n"
-            msg_reg = txt.format([self.rsq, self.adj_rsq, self.mse])
-            msg = msg_basic + "\n" + msg_reg
+    def gof_dict(self, obj, data, conf):
+        """Goodness of fit dictionary for a particular dataset"""
+        fit = Fit(obj, data)
+        gof = GOF(fit.ytrue, fit.yhat, fit.leafnodes, fit.settings, conf)
+        return gof.__dict__
 
-        elif self.loss_func == Loss.gini:
-             msg_class = "Accuracy {:.2%}\n".format(1-self.error)
-             msg = msg_basic + "\n" + msg_class
+    def get_summary(self, obj, conf, train, test):
+        """Create the goodness of fit data summary"""
+        train = self.gof_dict(obj, train, conf)
+        test = self.gof_dict(obj, test, conf)
+        metrics = ['error', 'predictors', 'rsq', 'adjrsq']
+        data = [[k, train[k], test[k]] for k in metrics]
+        header = ['Metrics', 'Training', 'Testing']
+        return ListDF(data, header)
 
-        return msg
 
-#####################Forest############################################
-import copy
+# ############################Tree#####################################
+class Tree(Diagnostics, Predict):
+    """Decision Tree class.  Classification Trees and Regression Trees
+    depend on the loss function type."""
+    counter = 0
+    t0 = time.time()
 
-class Bootstrap:
-    """Method class for construction of Random Forest"""
-    def colmin(xlist, colnum):
-        """Find the row containing the minimum value of a column"""
-        col = [row[colnum] for row in xlist]
-        the_min = min(col)
-        return [row for row in xlist if row[colnum] == the_min]
+    def __init__(self, modeldf, mingain=0, minrows=1, maxheight=100,
+                 ntrees=1, nfeatures=1, conf=0.95):
+        Tree.counter += 1
+        self.treeid = Tree.counter
+        tparams = TreeParams(mingain, minrows, maxheight)
+        self.configs = Settings(modeldf, tparams, ntrees, nfeatures)
+        self.model = self.build_tree(modeldf.train, self.configs)
+        self.nodes = self.flatten_tree()
+        nodes = list(self.nodes.values())
+        self.height = self.calc_height(nodes)
+        Diagnostics.__init__(self, nodes, modeldf.header)
+        Predict.__init__(self, self, conf)
 
-    def joins_a(a_data, b_data):
-        """Returns a dictionary object. Where dict.value = 1 results in an
-        inner join of A and B. Where dict.value = 0 results in a Left Outer
-        Exclude B.
-        """
-        in_a = {str(row):0 for row in a_data}
-        for row in b_data:
-            if str(row) in in_a:
-                in_a[str(row)] += 1
-        return in_a
+    def build_tree(self, data, settings, idx=1):
+        """Builds the tree.
+        Base case: no further info gain. Since we can ask no further
+        questions, we'll return a leaf.
+        Otherwise: Continue recursively down both branches. Return a Decision
+        node. The Decision node records the question and both branches. """
+        node = Node(data, settings, idx)
+        t0 = Tree.t0
+        t1 = time.time()
+        treeidx = Tree.counter
+        print("Tree {} Node {} Completed at {}".format(treeidx, idx, t1-t0))
+        if node.question is None:
+            return Leaf(node)
 
-    def left_outer_exclude_b(a_data, b_data):
-        """Similar to a sql left outer join excluding B this function finds all
-        rows in a that are not in b."""
-        in_a = Bootstrap.joins_a(a_data, b_data)
-        return [row for row in a_data if in_a[str(row)] == 0]
+        split = Split(node, node.question)
+        settings.questions[idx] = node.question
+        left = self.build_tree(split.true_rows, settings, 2*idx)
+        right = self.build_tree(split.false_rows, settings, 2*idx + 1)
+        return Decision(left, right, node)
 
-    def sample(data):
-        """Create a bootstrapped replica of a data set. Function returns the
-        same number of rows as the original data set. Bootstrapping samples
-        rows from the original data set with replacement."""
-        output = []
-        for i in range(len(data)):
-            rand_data = [(random.random(), row) for i, row in enumerate(data)]
-            the_min_row = Bootstrap.colmin(rand_data, 0)
-            the_min_row = the_min_row[0][1] #[0] unlists [1] select data row
-            output.append(the_min_row)
-        return output
+    def flatten_tree(self):
+        """Macro function necessary to prevent nodes from migrating to other
+        trees in a forest"""
+        def attach_nodes(node, treenodes=None):
+            """Add Leaf and Decision objects to the tree"""
+            if treenodes is None:
+                treenodes = {}
+            if isinstance(node, Leaf):
+                treenodes[node.index] = node
+            if isinstance(node, Decision):
+                treenodes[node.index] = node
+                attach_nodes(node.true_branch, treenodes)
+                attach_nodes(node.false_branch, treenodes)
+            return {k: treenodes[k] for k in sorted(treenodes)}
+        return attach_nodes(self.model)
 
-    def build_forest(settings, n_trees, data, ycol):
-        trees = {}
-        for idx in range(n_trees):
-            boot = Bootstrap.sample(data)
-            spill = Bootstrap.left_outer_exclude_b(data, boot)
-            args1 = [boot, ycol, settings.header, settings.loss_func]
-            args2 = [settings.min_gain, settings.min_rows, settings.forest]
-            args = tuple(args1 + args2)
-            tree = Tree(*args, settings.n_features)
-            trees[idx] = {'data': boot, 'out_of_bag': spill, 'tree': tree}
-        return trees
+    def print_(self):
+        """Builds a list of strings"""
+        def tree_string(node, tree_repr=None):
+            """print_tree(my_tree.model)"""
+            if tree_repr is None:
+                tree_repr = []
+            if isinstance(node, Leaf):
+                tree_repr.append("-->{}".format(node.prediction))
 
-    def oob_forest(forest, treeidx):
-        """Return the subforest that is out of the bag of the tree referenced"""
-        subforest = copy.deepcopy(forest)
-        trees = {k:v for k, v in forest.trees.items() if k != treeidx}
-        vals = trees.values()
-        subforest.trees = {k:v for k, v in enumerate(vals)} #reset dict
-        subforest.configs.n_trees = len(subforest.trees)
-        return subforest
+            if isinstance(node, Decision):
+                tree_repr.append("\n{}".format(node.question))
 
-    def calc_oob_error(forest, n_trees):
-        """Calculate out of bag error for each sample"""
-        err_rate = 0
-        for idx in range(n_trees):
-            subforest = Bootstrap.oob_forest(forest, idx)
-            testdata = forest.trees[idx]['out_of_bag']
-            prediction = Predict(subforest, testdata)
-            err_rate += prediction.error
-        return err_rate/n_trees
+                tree_repr.append("\n\tTrue")
+                tree_string(node.true_branch, tree_repr)
+                tree_repr.append("\tFalse")
+                tree_string(node.false_branch, tree_repr)
+            return tree_repr
+        return "".join(tree_string(self.model))
 
-class Forest:
+    def classify(self, row):
+        """Macro function of get_leaf to return leaf nodes from tree based
+        on data. Makes application simpler in other classes."""
+        def get_leaf(row, node):
+            """Recursive function for returning Leaf node from tree.model
+            Base case: reach a Leaf node
+            Recursion: traverse Decision Nodes along branches until Base Case
+            classify(row, self.model)
+            """
+            if isinstance(node, Leaf):
+                return node
+            if node.question.match(row):
+                return get_leaf(row, node.true_branch)
+            return get_leaf(row, node.false_branch)
+        return get_leaf(row, self.model)
+
+    def calc_height(self, nodes):
+        """Size of a binary tree of height, h is 2^h - 1
+        Height = log2(n+1) where n is the max node"""
+        idx = max([node.index for node in nodes], default=1)
+        h = round(math.log2(idx + 1))
+        return h
+
+    def __call__(self, index=1):
+        items = self.nodes[index].__dict__.items()
+        ugly = ['data', 'settings', 'false_branch', 'true_branch']
+        pp.pprint({k: v for k, v in items if k not in ugly})
+        return self.nodes[index]
+
+
+# ####################Forest############################################
+class OutofBag:
+    """Calculation of out of bag error for Random Forest. The number of spills
+    is the same as the number of trees in the forest. The length of yhat and
+    ytrue should also be the same as the number of trees."""
+    def __init__(self, forest, conf):
+        self.aggregator = forest.configs.loss.predict
+        self.ytrue = self.aggregate_y(forest)
+        self.leaves = self.get_leaves(forest)
+        self.yhat = self.predict()
+        args = [self.ytrue, self.yhat, self.leaves, forest.configs, conf]
+        self.error = GOF(*args).error
+
+    def aggregate_y(self, forest):
+        """Get yvalues from all the spills"""
+        spills = forest.spills.values()
+        ycol = forest.configs.modeldf.ycol
+        ytrue = lambda x: self.aggregator([row[ycol] for row in x])
+        return flatten([ytrue(spill) for spill in spills])
+
+    def oobleaves(self, row, forest):
+        """Get leaf nodes not built with the row of data"""
+        oobkeys = [k for k, boot in forest.boots.items() if row not in boot]
+        subforest = [v for k, v in forest.trees.items() if k in oobkeys]
+        return [tree.classify(row) for tree in subforest]
+
+    def get_leaves(self, forest):
+        """Return the subforest that is out of the bag"""
+        spills = forest.spills.values()
+        node = lambda x: flatten([self.oobleaves(row, forest) for row in x])
+        return [node(spill) for spill in spills]
+
+    def predict(self):
+        """Get aggregated prediction the leaf nodes generated on each spill"""
+        yhat = lambda x: self.aggregator([node.prediction for node in x])
+        return [yhat(group) for group in self.leaves]
+
+
+class Forest(Diagnostics, Predict):
     """Random Forest class. Constructs either Classification Trees or
     Regression Trees based on the loss function. Classification Forests return
     the mode of the Classification Trees. Regression Forests return the mean
     of the Regression Trees.
     oob_err - Out of Bag Error
     """
+    def __init__(self, modeldf, mingain=0, minrows=1, maxheight=10,
+                 ntrees=10, nfeatures=1, conf=0.95):
+        Tree.counter = 0  # reset tree counter prior to creating trees
+        tparams = TreeParams(mingain, minrows, maxheight)
+        self.configs = Settings(modeldf, tparams, ntrees, nfeatures)
+        self.trees = {}
+        self.boots = {}
+        self.spills = {}
+        self.build_forest(self.configs, conf)
+        self.oob_err = OutofBag(self, conf).error
+        trees = self.trees.values()
+        nodes = flatten([list(tree.nodes.values()) for tree in trees])
+        Diagnostics.__init__(self, nodes, modeldf.header)
+        Predict.__init__(self, self, conf)
 
-    def __init__(self, data, ycol, header, lossfunc, min_gain=0, min_rows=1,
-                 forest=True, n_features=1, n_trees=10):
-        args = (data, ycol, header, lossfunc, min_gain, min_rows)
-        self.configs = Settings(*args, forest, n_features, n_trees)
-        self.trees = Bootstrap.build_forest(self.configs, n_trees, data, ycol)
-        self.oob_err = Bootstrap.calc_oob_error(self, n_trees)
+    def sample(self, data):
+        """Create a bootstrapped replica of a data set. Returns the same
+        number of rows as the original data set. Sample with replacement. Rows
+        excluded from the sample go into spill used for out of bag error
+        calculation"""
+        pop_size = len(data)
+        rownums = list(range(pop_size))
+        n_size = int(0.99*pop_size)  # Ensure sample and spill have data
+        bootpop = random.sample(rownums, k=n_size)  # Sample < Population
+        samplerows = random.choices(bootpop, k=pop_size)
+        spillrows = [x for x in rownums if x not in samplerows]
+        return samplerows, spillrows
 
-    def __call__(self, index=0):
-        return self.trees[index]['tree']
+    def build_forest(self, settings, conf):
+        """Build forest on bootstrap samples from training data"""
+        data = settings.modeldf.train
+        y = settings.modeldf.ycol
+        kwargs = vars(settings.tparams)
+        for idx in range(1, settings.ntrees + 1):
+            samplerows, spillrows = self.sample(data)
+            self.boots[idx] = [data[i] for i in samplerows]
+            self.spills[idx] = [data[i] for i in spillrows]
+            df = ListDF(self.boots[idx], settings.modeldf.header)
+            bootdf = ModelDF(df, ycol=y, tst_prop=0)  # No split_train_test
+            self.trees[idx] = Tree(bootdf, **kwargs, conf=conf)
 
-    def __str__(self):
-        attr = "{}".format([x for x in dir(self) if "__" not in x])
-        return "Forest Class attributes\n {}".format(wrap(attr))
-
-
-##########################prep funcs############
-class ConfigStub:
-    '''
-    There once was a library called config, it had these raw settings. This class
-    helps so we don't have to fix all that config code right now.
-    '''
-    def __init__(self):
-        self.MAX_WIDTH = 100
-        self.ROWS_TO_DISPLAY = 10
-        self.SIG_DIGITS = 2
-
-config = ConfigStub() # pylint: disable=invalid-name
-
-def scrub(sheet):
-    """ Function cleans an individual csv sheet.
-    1. Convert strings to numeric where appropriate
-    2. Remove blank rows
-    3. Find the header row
-    """
-    new_sheet = str_to_num(sheet)
-    new_sheet = remove_blank_rows(new_sheet)
-    new_sheet = new_sheet[find_header(new_sheet):]
-    return new_sheet
-
-def find_header(sheet):
-    """
-    The idea is that the header row is made up of only strings and it is a
-    complete row, i.e. number of string columns match the maximum number of
-    columns in the dataset. Rows could be blank or incomplete so the function
-    measures the length of each row.
-    """
-    cols = num_cols(sheet)
-    for row_i in range(len(sheet)):
-        row = sheet[row_i]
-        row_length = range(len(row))
-        col_cnt = sum(1 for i in row_length if type(row[i]) == str)
-        if col_cnt == cols:
-            header_row = row_i
-            break
-        else:
-            header_row = 0
-    return header_row
-
-def remove_blank_rows(sheet):
-    """ Blank rows are determined by the length of the row. Even a single
-    digit will still register as a positive length.
-    """
-    del_rows = [i for i in range(len(sheet)) if len(sheet[i]) == 0]
-    new_sheet = [sheet[i] for i in range(len(sheet)) if i not in del_rows]
-    return new_sheet
-
-def str_to_num(sheet):
-    """
-    Turn strings into numbers including percents wherever possible.
-    Element cannot be empty string. -1 means last element of list
-    """
-    for i in range(len(sheet)):
-        for j in range(len(sheet[i])):
-            elm = sheet[i][j]
-            if type(elm) == str and len(elm) > 0:
-                try:
-                    sheet[i][j] = float(elm.replace(",", ""))
-                except ValueError:
-                    pass
-                if elm[-1] == "%":
-                    sheet[i][j] = float(elm[:-1])/100.
-    return sheet
-
-def delete_cols(sheet, select_cols):
-    """Function deletes the columns of a list. Sorting the select_cols in
-    reverse order is essential to the success of the function. Once a column
-    is deleted the number of columns available changes.
-    """
-    try:
-        select_cols.sort(reverse=True)
-        for row in sheet:
-            for i in select_cols:
-                del row[i]
-    except:
-        print("Columns selected for deletion must be a list")
-    return sheet
-
-def remove_blank_cols(sheet):
-    """Function determines how sparse the column is across all rows. Columns
-    that have greater sparseness than the percentage threshold are deleted.
-    """
-    cols = num_cols(sheet)
-    rows = len(sheet)
-    columnloss = [0 for i in range(cols)]
-
-    for i in range(cols):
-        for row in sheet:
-            if len(str(row[i])) == 0:
-                columnloss[i] += 1/rows
-    emptycols = [i for i in range(cols) if columnloss[i] > 0.9]
-    cleanedsheet = delete_cols(sheet, emptycols)
-    return cleanedsheet
-
-def unstack(sheet, col_to_unstack, grp_col):
-    """Function unstacks a column using the grp_col. Each unique
-    element of the grp_col becomes a new column. The values in the
-    column to unstack are spread to each new group column.
-    """
-    groups = [row[grp_col] for row in sheet[1:]]
-    colnames = list(set(groups))
-
-    for colname in colnames:
-        sheet[0].append(colname)
-        for row in sheet[1:]:
-            if row[grp_col] == colname:
-                row.append(row[col_to_unstack])
-            else:
-                row.append('')
-
-    delete_cols(sheet, [col_to_unstack, grp_col])
-    return sheet
-
-class Folder:
-    """Ingests all csv files in a specified folder. The object then stores
-    multiple attributes of every file. """
-    def __init__(self, dirpath):
-        self.dirpath = dirpath
-        self.files = [filename for filename in os.listdir(dirpath)]
-        self.sheets = [loadcsv(dirpath, filename) \
-                       for filename in os.listdir(dirpath)]
-        self.filecount = len(self.files)
-        self.sheets = [scrub(sheet) for sheet in self.sheets]
-        self.cols = [num_cols(sheet) for sheet in self.sheets]
-        self.rows = [len(sheet) for sheet in self.sheets]
-        self.headers = [sheet[0] for sheet in self.sheets]
-
-    def __call__(self, fileindex=0):
-        sheet = self.sheets[fileindex][1:]
-        header = self.headers[fileindex]
-        sheetname = self.files[fileindex]
-        print("%d files in the folder %s" % (self.filecount, self.dirpath))
-        print(print_sheet(sheet, header, sheetname))
-
-    def collate(self):
-        collated = collate_sheets(self.sheets)
-        collated = remove_blank_cols(collated)
-        return collated
-
-    def export(self):
-        exportcsv(filename=self.files[0], data=self.sheets,
-                  folder=os.getcwd())
-
-    def to_list_df(self, fileindex=0):
-        """Send a file to the ListDF class"""
-        return ListDF(self.sheets[fileindex][1:], self.headers[fileindex],
-                      self.files[fileindex])
-
-class ListDF:
-    """a single data table object"""
-    def __init__(self, rows, header, sheetname=''):
-        self.data = rows
-        self.header = header
-        self.num_rows = len(rows)
-        self.num_cols = num_cols(rows)
-        self.doctitle = sheetname
-        for i in range(len(header)):
-            title = header[i]
-            column = [row[i] for row in rows]
-            setattr(self, title, column)
-
-    def __call__(self, col_idx=0):
-        return [row[col_idx] for row in self.data]
-
-    def add_col(self, col_data, col_name, insert_spot=-1):
-        """Insert a new column into the data table"""
-        for i, row in enumerate(self.data):
-            row.insert(insert_spot, col_data[i])
-        self.header.insert(insert_spot, col_name)
-        self.__init__(self.data, self.header)
-
-    def paste(self, data, names):
-        """Paste data in front of data frame"""
-        rows = [pair[0] + pair[1] for pair in zip(data, self.data)]
-        header = names + self.header
-        self.__init__(rows, header)
-
-    def subset(self, col):
-        """Create a subset ListDF from a column list of numbers"""
-        rows = [[row[idx] for idx in col] for row in self.data]
-        header = [self.header[idx] for idx in col]
-        return ListDF(rows, header)
-
-    def transform_col(self, fct, col_name):
-        i = self.header.index(col_name)
-        for row in self.data:
-            row[i] = fct(row[i])
-        self.__init__(self.data, self.header)
-
-    def del_col(self, col=None, colname=''):
-        """Allow input of a column number or a column title"""
-        if colname in self.header:
-            col = self.header.index(colname)
-        #todo: this is a big issue to look into
-        [row.pop(col) for row in self.data]
-        self.header.pop(col)
-        self.__init__(self.data, self.header)
-
-    def sort_col(self, col=None, colname='', descending=False):
-        """Sort all rows based on a column number or a column title"""
-        if colname in self.header:
-            col = self.header.index(colname)
-
-        data = sorted(self.data, key=lambda x: x[col], reverse=descending)
-        self.__init__(data, self.header)
-
-    def col_order(self, cols=[], colnames=''):
-        """Sort data based on column number or a column title"""
-        if set(colnames).issubset(set(self.header)):
-            cols = [self.header.index(colname) for colname in colnames]
-
-        data = [self.data[col] for col in cols]
-        header = [self.header[col] for col in cols]
-        self.__init__(data, header)
-
-    def export(self, filename='ListDataframe.csv', folder=os.getcwd()):
-        rows = self.data.copy()
-        if rows[0] == self.header:
-            rows = self.data[1:]
-        else:
-            rows.insert(0, self.header)
-        exportcsv(filename, rows, folder)
-        print("{} rows exported to {}\n as {}\n".format(self.num_rows, folder, filename))
+    def __call__(self, index=1):
+        pp.pprint(self.trees[index].__dict__.keys())
+        return self.trees[index]
 
     def __repr__(self):
-        return print_sheet(self.data, self.header, self.doctitle)
+        ftype = {'gini': 'Classification Forest', 'var': 'Regression Forest'}
+        return ftype[self.configs.loss.name]
 
-def collate_sheets(sheets):
-    """Combine sheets together provided that the header rows all match.
-    Function input is the class object loadedfiles
-    """
-    header = sheets[0][0]
-    row_count = 0
-    print("Sheets merging...")
-    for i in range(len(sheets)):
-        sheet = sheets[i]
-        if i == 0:
-            rows = len(sheet)
-            combined = sheet
-            row_count += rows
-        else:
-            if sheet[0] == header:
-                rows = len(sheet[1:])
-                combined.extend(sheet[1:])
-                row_count += rows
-            else:
-                print("Sheet %d does not match" % i)
-        print("Sheet %03d Rows %03d %03d" % (i, rows, row_count))
-    print("Sheet All Rows %03d\n" % row_count)
-    return combined
 
-def loadcsv(folder, filename):
-    """folder is a filepath. filename includes the extension of the file.
-    The function reads in csv files and returns a list.
-    """
-    filepath = os.path.join(folder, filename)
-    try:
-        with open(filepath, newline='') as csvfile:
-            csv_list = list(csv.reader(csvfile))
-            return csv_list
-    except:
-        print("Something went wrong with %s" % filename)
+# #########################prep funcs############
+class ListDF:
+    """A single dataframe object based on the python list object"""
+    def __init__(self, data, header, sheetname=''):
+        self.data = data
+        self.header = header
+        self.doctitle = sheetname
+        self.numrows = len(data)
+        self.numcols = len(header)
+        self.set_colobjs(data, header)
+        self.levels = self.set_levels()
 
-def exportcsv(filename, data, folder=os.getcwd()):
-    """folder is a filepath. filename includes the extension of the file.
-    The function exports a list as a csv.
-    """
-    if not os.path.exists(folder):
-        os.makedirs(folder)
-    filepath = os.path.join(folder, filename)
-    with open(filepath, 'w', newline='') as csvfile:
-        writer = csv.writer(csvfile, dialect='excel')
-        writer.writerows(data)
+    def set_colobjs(self, data, header):
+        """Create column objects"""
+        for i, title in enumerate(header):
+            column = [row[i] for row in data]
+            setattr(self, title, column)
 
-class CsvHelper:
+    def unique_vals(self, col=None):
+        """Find the unique values for a column in a dataset."""
+        colname = self.header[col]
+        column = getattr(self, colname)
+        vals = set([x for x in column if x is not None])  # Exclude None
+        return list(vals)
 
-    def __init__(self):
-        self.name = "hi"
+    def set_levels(self):
+        """Calculate the number of unique items in each column"""
+        uniques = [self.unique_vals(col=i) for i in range(self.numcols)]
+        return list(map(len, uniques))
 
-    def loadcsv(self, folder, filename):
-        """folder is a filepath. filename includes the extension of the file.
-        The function reads in csv files and returns a list.
-        """
-        filepath = os.path.join(folder, filename)
-        #try:
-        with open(filepath, newline='') as csvfile:
-            csv_list = list(csv.reader(csvfile))
-            return csv_list
-        #except:
-        #    print("Something went wrong with %s" % filename)
+    def reset(self, data, header):
+        """Update attributes of the class instance"""
+        [delattr(self, title) for title in self.header]  # reset column objects
+        self.data = data
+        self.header = header
+        self.numrows = len(data)
+        self.numcols = len(header)
+        self.set_colobjs(data, header)
+        self.levels = self.set_levels()
 
-    def exportcsv(self, filename, data, folder=os.getcwd()):
-        """folder is a filepath. filename includes the extension of the file.
-        The function exports a list as a csv.
-        """
+    def names_or_nums(self, cols, colnames):
+        """Process colnames into column numbers or return column numbers"""
+        if colnames is not None:
+            header = self.header
+            cols = [header.index(x) for x in colnames if x in header]
+        return cols
+
+    def del_cols(self, cols=None, colnames=None):
+        """Allow input of column numbers or column titles"""
+        cols = self.names_or_nums(cols, colnames)
+        keep = [i for i in range(self.numcols) if i not in cols]
+        data = [[row[i] for i in keep] for row in self.data]
+        header = [self.header[i] for i in keep]
+        self.reset(data, header)
+
+    def transform_col(self, fct, colname):
+        col = self.header.index(colname)
+        for row in self.data:
+            row[col] = fct(row[col])
+        self.reset(self.data, self.header)
+
+    def sort_bycols(self, cols=None, colnames=None, descending=False):
+        """Sort all rows based on column numbers or a column titles"""
+        cols = self.names_or_nums(cols, colnames)
+        sortby = lambda x: [x[col] for col in cols]
+        self.data = sorted(self.data, key=sortby, reverse=descending)
+
+    def export(self, filename='ListDataframe.csv', folder=os.getcwd()):
+        data = self.data.copy()
+        data.insert(0, self.header)
         if not os.path.exists(folder):
             os.makedirs(folder)
         filepath = os.path.join(folder, filename)
         with open(filepath, 'w', newline='') as csvfile:
             writer = csv.writer(csvfile, dialect='excel')
             writer.writerows(data)
+        txt = "{} rows exported to {}\n as {}\n"
+        print(txt.format(self.numrows, folder, filename))
 
-    def csv_to_df(self, data):
-        scrub(data)
-        #col = num_cols(sheet)
-        #row = len(sheet)
-        #header = sheet[0]
-        return ListDF(data[1:], data[0])
+    def __call__(self, col_idx=0):
+        return [row[col_idx] for row in self.data]
 
-def find_root(name, path):
-    for root, dirs, files in os.walk(path):
-        if name in root:
-            return root
+    def __repr__(self):
+        display = copy.deepcopy(self.data)
+        if self.numrows > 25:
+            display = random.sample(self.data, k=25)
+        display.insert(0, self.header)
+        return neat_string(display)
 
-def find_subroot(partial_path, path):
-    """Returns the root containing all of the names in the partial path"""
-    try:
-        names = partial_path.split('/')
-    except SyntaxError:
-        print("Oops! Only use forwardslash('\\') for your input string.")
-    possible_roots = []
-    for name in names:
-        possible_roots.append(find_root(name, path))
-    for root in possible_roots:
-        if all(name in root for name in names):
-            return root
 
-def find_file(name, path):
-    for root, dirs, files in os.walk(path):
-        if name in files:
-            return os.path.join(root, name)
+class ModelDF(ListDF):
+    """A dataframe object that seperates data into features and response"""
+    def __init__(self, df, ycol=0, tst_prop=0.5):
+        ListDF.__init__(self, df.data, df.header, df.doctitle)
+        self.ycol = ycol
+        self.xcols = [i for i, name in enumerate(self.header) if i != ycol]
+        self.xdf = self.get_xdf(self.xcols)
+        self.train, self.test = self.split_train_test(tst_prop)
 
-def make_folder(path):
-    try:
-        os.mkdir(path)
-    except OSError:
-        print("Creation of the directory %s failed" % path)
-    else:
-        print("Successfully created the directory %s " % path)
+    def get_xdf(self, xcols):
+        xnames = [name for i, name in enumerate(self.header) if i in xcols]
+        xdata = [[row[i] for i in xcols] for row in self.data]
+        return ListDF(xdata, xnames)
 
-def shorten_line(line, max_width=config.MAX_WIDTH):
-    """For more attractive printing on the screen. Shortens the line
-    displayed. Function breaks a line into two parts. The first part
-    accepts the first 2/3 of characters. The second part accepts the
-    last 2/3 of characters counting from the end of the string."""
-    newline = [round(x, config.SIG_DIGITS) if isinstance(x, float) else x
-               for x in line]
-    linetext = ", ".join(str(x) for x in newline)
-    line_length = len(linetext)
-    linedict = {k:v for k, v in enumerate(newline)}
-    if line_length > max_width:
-        width_tally = int(2/3*max_width+4)
-        a_short = textwrap.shorten(linetext, width=width_tally, placeholder='....')
-
-        keep = []
-        for k in sorted(linedict, reverse=True):
-            width_tally += len(str(linedict[k]))
-            if width_tally <= max_width:
-                keep.append(k)
-        keep.sort()
-
-        b_join = ", ".join(str(linedict[k]) for k in keep)
-        return a_short + b_join
-    else:
-        return newline
-
-def wrap(text, width=75):
-    wrapper = textwrap.TextWrapper(width)
-    word_list = wrapper.wrap(text)
-    row = ' '.join([str(elem + '\n') for elem in word_list])
-    return '%s' % row
-
-def print_sheet(sheet, header, sheetname='', cut=config.ROWS_TO_DISPLAY):
-    """Function prints lists in matrix format for specified number of rows
-    """
-    num_rows = len(sheet)
-    num_cols_loc = num_cols(sheet)
-    string_list = []
-
-    if len(sheetname) > 0:
-        string_list.append("%s" % sheetname)
-    string_list.append("%d Rows X %d Columns\n" % (num_rows, num_cols_loc))
-    string_list.append("Header: %s" % shorten_line(header))
-
-    for row in range(num_rows):
-        line = shorten_line(sheet[row])
-        if row <= cut or row >= num_rows-cut:
-            string_list.append("Row %02d: %s" % (row, line))
-        elif row == cut + 1:
-            string_list.append(" ".join("..." for x in sheet[row]))
-
-    string_list.append("\n")
-    return "\n".join(string_list)
-
-def print_list(data, cut=config.ROWS_TO_DISPLAY):
-    """Function prints lists in matrix format for specified number of rows
-    """
-    num_rows = len(data)
-    string_list = []
-
-    for row in range(num_rows):
-        line = shorten_line(data[row])[0]
-        if row <= cut or row >= num_rows-cut:
-            string_list.append(line)
-        elif row == cut + 1:
-            string_list.append("....")
-
-    return print(string_list)
-
-def is_empty(any_structure):
-    if any_structure:
-        print('Structure is not empty.')
-        return False
-    else:
-        print('Structure is empty.')
-        return True
-
-def num_cols(sheet):
-    """ Find the number of columns in a sheet"""
-    cols = [len(sheet[row]) for row in range(len(sheet))]
-    return max(cols, default=0)
-
-def unique_vals(rows, col):
-    """Find the unique values for a column in a dataset."""
-    vals = set([row[col] for row in rows])
-    unique = sorted(list(vals))
-    return unique
-
-def is_numeric(value):
-    """Test if a value is numeric"""
-    return isinstance(value, numbers.Number)
-
-def class_counts(rows, col):
-    """Counts the number of each type in the column. Categorical data only"""
-    counts = {}
-    for row in rows:
-        label = row[col]
-        if label not in counts:
-            counts[label] = 0
-        counts[label] += 1
-    return counts
-
-def dec_counts(rows, col):
-    """Provides proportions for each category of a column"""
-    counts = class_counts(rows, col)
-    total = sum(counts.values()) * 1.0
-    prop = {}
-    for lbl in counts.keys():
-        prop[lbl] = counts[lbl] / total
-    return prop
-
-def flatten_generator(nested_list):
-    """Generator to flatten an arbitrarily nested list. To extract
-    results use list(flatten(x))"""
-    for i in nested_list:
-        if isinstance(i, (list, tuple)):
-            for j in flatten_generator(i):
-                yield j
-        else:
-            yield i
-
-def flatten(nested_list):
-    """Converts the flatten_generator func results into a list"""
-    return list(flatten_generator(nested_list))
-
-def get_key(val, my_dict):
-    """function to return key for any value"""
-    for key, value in my_dict.items():
-        if val == value:
-            return key
-    return "key doesn't exist"
-
-def sortdict(my_dict, descending=True, sortbykeys=False):
-    """Sorts dictionary by key or values"""
-    if sortbykeys:
-        keys = sorted(my_dict.keys(), reverse=descending)
-        return {k:my_dict[k] for k in keys}
-
-    values = sorted(my_dict.values(), reverse=descending)
-    return {get_key(v, my_dict):v for v in values}
-
-def split_train_test(data, tst_prop=0.5):
-    """Split a data set on its rows into test and train data sets."""
-    random.shuffle(data)
-    train_size = int(len(data) - tst_prop*len(data))
-    train_data = data[:train_size]
-    test_data = data[train_size:]
-    return train_data, test_data
+    def split_train_test(self, tst_prop):
+        """Split a data set on its rows into test and train data sets."""
+        if tst_prop > 0:
+            rownums = list(range(self.numrows))
+            rowshuffle = random.sample(rownums, self.numrows)
+            train_size = int(self.numrows - tst_prop*self.numrows)
+            train = rowshuffle[:train_size]
+            train_data = [r for i, r in enumerate(self.data) if i in train]
+            test_data = [r for i, r in enumerate(self.data) if i not in train]
+            return train_data, test_data
+        return copy.deepcopy(self.data), copy.deepcopy(self.data)
