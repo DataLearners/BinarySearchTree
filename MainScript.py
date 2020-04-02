@@ -67,6 +67,21 @@ diab_pred = bst.Predict(diab_forest, test_data, conf=0.9).df
 bst.Summary(bmi_forest).nodesummary.export("BMI_ForestLeafMatrix.csv", folder=outputpath)
 bst.Summary(bmi_forest).leafclusters.export("BMI_ForestMarkedTrainingData.csv", folder=outputpath)
 
+header = ['Response', 'X1', 'X2']
+tri = lambda low, high, mode: random.triangular(low, high, mode)
+y = [random.random() for i in range(1000)]
+data = [[y[i], 0.5*y[i], 0.5*y[i]] for i in range(1000)]
+df = bst.ListDF(data, header)
+
+train_data, test_data = bst.split_train_test(df.data, tst_prop=0.3)
+y = df.header.index('Response')
+rand_forest = bst.Forest(train_data, y, df.header, lossfunc='var', n_features=1)
+print("Rand Out of bag error {}".format(rand_forest.oob_err))
+rand_pred = bst.Predict(rand_forest, test_data, conf=0.9).df
+bst.Summary(rand_forest).nodesummary.export("Rand_ForestLeafMatrix.csv", folder=outputpath)
+bst.Summary(rand_forest).leafclusters.export("Rand_ForestMarkedTrainingData.csv", folder=outputpath)
+bst.Summary(rand_forest).featureimportance
+
 horiz = [trees for trees in range(3, 9, 3)]
 rsq, obe, mse = [], [], []
 for trees in horiz:
