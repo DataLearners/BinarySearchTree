@@ -1,0 +1,7 @@
+README.md
+setup.py
+bst/__init__.py
+bst.egg-info/PKG-INFO
+bst.egg-info/SOURCES.txt
+bst.egg-info/dependency_links.txt
+bst.egg-info/top_level.txt
