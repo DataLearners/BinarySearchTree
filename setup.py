@@ -6,7 +6,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="bst",
-    version="1.0.1",
+    version="1.0.2",
     author="Douglas Brown",
     author_email="dbrown@innovasi.com",
     description="Binary Search Tree",

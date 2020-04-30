@@ -38,11 +38,11 @@ The random forest is a collection of either Classification Trees or Regression T
 
 ## Installation
 
-Use the package manager [pip](https://pip.pypa.io/en/stable/) to install bst
+Use the package manager [pip](https://pip.pypa.io/en/stable/) to install bst.
 
 ```
-cmd> cd 'Folderpath...\dist'
-cmd> python -m pip install bst-1.0.1-py3-none-any.whl
+cmd> cd 'C:\...\dist'
+cmd> python -m pip install bst-1.0.2-py3-none-any.whl
 ```
 
 
@@ -51,7 +51,6 @@ cmd> python -m pip install bst-1.0.1-py3-none-any.whl
 
 ```python
 import bst
-
 # Sample data of fruit with diameters and colors
 import random
 size = 10

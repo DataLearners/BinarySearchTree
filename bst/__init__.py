@@ -11,9 +11,7 @@ import statistics
 import random
 from sklearn.metrics import r2_score, mean_squared_error
 import scipy.stats
-import pprint as pp
-import time
-start = time.time()
+import pprint as pp 
 
 
 def flatten(nested_list):
@@ -515,7 +513,6 @@ class Tree(Diagnostics, Predict):
     """Decision Tree class.  Classification Trees and Regression Trees
     depend on the loss function type."""
     counter = 0
-    t0 = time.time()
 
     def __init__(self, modeldf, mingain=0, minrows=1, maxheight=100,
                  ntrees=1, nfeatures=1, conf=0.95):
@@ -537,10 +534,6 @@ class Tree(Diagnostics, Predict):
         Otherwise: Continue recursively down both branches. Return a Decision
         node. The Decision node records the question and both branches. """
         node = Node(data, settings, idx)
-        t0 = Tree.t0
-        t1 = time.time()
-        treeidx = Tree.counter
-        print("Tree {} Node {} Completed at {}".format(treeidx, idx, t1-t0))
         if node.question is None:
             return Leaf(node)
 
